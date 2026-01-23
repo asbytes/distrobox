@@ -69,6 +69,7 @@ HOST_MOUNTS_RO_INIT="
 container_additional_packages=""
 init=0
 init_hook=""
+isolated=0
 nvidia=0
 pre_init_hook=""
 rootful=0
@@ -106,6 +107,7 @@ Options:
 	--init/-I:		whether to use or not init
 	--pre-init-hooks:	commands to execute prior to init
 	--nvidia:		try to integrate host's nVidia drivers in the guest
+	--isolated:		isolated container
 	--upgrade/-U:		run init in upgrade mode
 	--verbose/-v:		show more verbosity
 	--version/-V:		show version
@@ -189,6 +191,13 @@ while :; do
 				shift
 			fi
 			;;
+		--isolated)
+			if [ -n "$2" ]; then
+				isolated="$2"
+				shift
+				shift
+			fi
+			;;
 		--)
 			shift
 			init_hook=$*
@@ -239,6 +248,13 @@ if stat /run/host/etc/shadow > /dev/null &&
 	} &&
 	[ ! -e /run/.nopasswd ]; then
 	rootful=1
+fi
+
+if [ -f /run/.containerenv ]; then
+	. /run/.containerenv
+	if [ "x$rootless" = "x0" ]; then
+		rootful=1
+	fi
 fi
 
 # Get host $LANG
@@ -1824,24 +1840,26 @@ fi
 # Set SHELL to the install path inside the container
 SHELL="$(command -v "${shell_pkg}")"
 
-# Attempt to download host-spawn during init, we don't care if it fails, so let's
-# continue in that case
-/usr/bin/distrobox-host-exec -Y test 2> /dev/null > /dev/null || :
+if [ "${isolated}" -eq 0 ]; then
+	# Attempt to download host-spawn during init, we don't care if it fails, so let's
+	# continue in that case
+	/usr/bin/distrobox-host-exec -Y test 2> /dev/null > /dev/null || :
 
-# If xdg-open is not present and we don't have an init system, do a link of it.
-# This is handy to handle opening of links, files and apps from inside the container
-# into the host.
-if [ "${init}" -eq 0 ] && ! command -v xdg-open; then
-	mkdir -p /usr/local/bin/
-	ln -sf /usr/bin/distrobox-host-exec /usr/local/bin/xdg-open
-fi
+	# If xdg-open is not present and we don't have an init system, do a link of it.
+	# This is handy to handle opening of links, files and apps from inside the container
+	# into the host.
+	if [ "${init}" -eq 0 ] && ! command -v xdg-open; then
+		mkdir -p /usr/local/bin/
+		ln -sf /usr/bin/distrobox-host-exec /usr/local/bin/xdg-open
+	fi
 
-# If flatpak is not present, do a link of it. This is handy to handle opening of
-# links, files and apps from inside the container into the host.
-# Note: we're using /usr/bin instead of /usr/local/bin because xdg-open will read
-# the desktopfile, which will contain an absolute path of /usr/bin/flatpak
-if ! command -v flatpak; then
-	ln -sf /usr/bin/distrobox-host-exec /usr/bin/flatpak
+	# If flatpak is not present, do a link of it. This is handy to handle opening of
+	# links, files and apps from inside the container into the host.
+	# Note: we're using /usr/bin instead of /usr/local/bin because xdg-open will read
+	# the desktopfile, which will contain an absolute path of /usr/bin/flatpak
+	if ! command -v flatpak; then
+		ln -sf /usr/bin/distrobox-host-exec /usr/bin/flatpak
+	fi
 fi
 
 ###############################################################################
@@ -2195,20 +2213,20 @@ test -z "\${DBUS_SESSION_BUS_ADDRESS:-}" && export DBUS_SESSION_BUS_ADDRESS="uni
 
 # Ensure we have these two variables from the host, so that graphical apps
 # also work in case we use a login session
-if [ -z "\$XAUTHORITY" ]; then
+if command -v host-spawn > /dev/null && [ -z "\$XAUTHORITY" ]; then
     export XAUTHORITY="\$(host-spawn sh -c "printf "%s" \\\$XAUTHORITY")"
     # if the variable is still empty, unset it, because empty it could be harmful
     [ -z "\$XAUTHORITY" ] && unset XAUTHORITY
 fi
-if [ -z "\$XAUTHLOCALHOSTNAME" ]; then
+if command -v host-spawn > /dev/null && [ -z "\$XAUTHLOCALHOSTNAME" ]; then
     export XAUTHLOCALHOSTNAME="\$(host-spawn sh -c "printf "%s" \\\$XAUTHLOCALHOSTNAME")"
     [ -z "\$XAUTHLOCALHOSTNAME" ] && unset XAUTHLOCALHOSTNAME
 fi
-if [ -z "\$WAYLAND_DISPLAY" ]; then
+if command -v host-spawn > /dev/null && [ -z "\$WAYLAND_DISPLAY" ]; then
     export WAYLAND_DISPLAY="\$(host-spawn sh -c "printf "%s" \\\$WAYLAND_DISPLAY")"
     [ -z "\$WAYLAND_DISPLAY" ] && unset WAYLAND_DISPLAY
 fi
-if [ -z "\$DISPLAY" ]; then
+if command -v host-spawn > /dev/null && [ -z "\$DISPLAY" ]; then
     export DISPLAY="\$(host-spawn sh -c "printf "%s" \\\$DISPLAY")"
     [ -z "\$DISPLAY" ] && unset DISPLAY
 fi

@@ -402,6 +402,11 @@ generate_enter_command()
 			--tty"
 	fi
 
+	# If isolated sandbox, always enter to $HOME
+	if [ "${isolated}" -ne 0 ]; then
+		skip_workdir=1
+	fi
+
 	# Entering container using our user and workdir.
 	# Start container from working directory. Else default to home. Else do /.
 	# Since we are entering from host, drop at workdir through '/run/host'
@@ -437,10 +442,18 @@ generate_enter_command()
 	# multiline.
 	# We also NEED to ignore the HOME variable, as this is set at create time
 	# and needs to stay that way to use custom home dirs. or it will be too talkative.
-	result_command="${result_command}
-		$(printenv | grep '=' | grep -Ev '"|`|\$' |
-		grep -Ev '^(CONTAINER_ID|FPATH|HOST|HOSTNAME|HOME|PATH|PROFILEREAD|PWD|SHELL|XDG_SEAT|XDG_VTNR|XDG_.*_DIRS|^_)' |
-		sed 's/ /\ /g' | sed 's/^\(.*\)$/--env=\1/g')"
+	if [ "${isolated}" -eq 0 ]; then
+		result_command="${result_command}
+			$(printenv | grep '=' | grep -Ev '"|`|\$' |
+			grep -Ev '^(CONTAINER_ID|FPATH|HOST|HOSTNAME|HOME|PATH|PROFILEREAD|PWD|SHELL|XDG_SEAT|XDG_VTNR|XDG_.*_DIRS|^_)' |
+			sed 's/ /\ /g' | sed 's/^\(.*\)$/--env=\1/g')"
+	else
+		if [ -n "${WAYLAND_DISPLAY}" ]; then
+			result_command="${result_command}
+				--env=WAYLAND_DISPLAY=${WAYLAND_DISPLAY}
+				--env=XDG_SESSION_TYPE=wayland"
+		fi
+	fi
 
 	# Start with the $PATH set in the container's config
 	container_paths="${container_path:-""}"
@@ -542,11 +555,13 @@ generate_enter_command()
 container_home="${HOME}"
 container_path="${PATH}"
 unshare_groups=0
+isolated=0
 # Now inspect the container we're working with.
 container_status="unknown"
 eval "$(${container_manager} inspect --type container --format \
 	'container_status={{.State.Status}};
 	unshare_groups={{ index .Config.Labels "distrobox.unshare_groups" }};
+	isolated={{ index .Config.Labels "distrobox.isolated" }};
 	{{range .Config.Env}}{{if and (ge (len .) 5) (eq (slice . 0 5) "HOME=")}}container_home={{slice . 5 | printf "%q"}}{{end}}{{end}};
 	{{range .Config.Env}}{{if and (ge (len .) 5) (eq (slice . 0 5) "PATH=")}}container_path={{slice . 5 | printf "%q"}}{{end}}{{end}}' \
 	"${container_name}")"

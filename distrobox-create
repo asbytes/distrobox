@@ -79,6 +79,7 @@ container_user_name="${USER}"
 container_user_uid="$(id -ru)"
 dryrun=0
 init=0
+isolated=0
 non_interactive=0
 nvidia=0
 nopasswd=0
@@ -211,6 +212,8 @@ Options:
 				this will be useful to either rename an existing distrobox or have multiple copies
 				of the same environment.
 	--home/-H:		select a custom HOME directory for the container. Useful to avoid host's home littering with temp files.
+				Mount point inside container depends on --isolated option. When isolated, custom home volume is mounted at same point
+				as host, else it is mounted as is.
 	--volume:		additional volumes to add to the container
 	--additional-flags/-a:	additional flags to pass to the container manager command
 	--additional-packages/-ap:	additional packages to install during initial container setup
@@ -228,6 +231,7 @@ Options:
 	--unshare-process:          do not share process namespace with host
 	--unshare-all:          activate all the unshare flags below
 	--compatibility/-C:	show list of compatible images
+	--isolated:		try to create isolated sandbox instead of host integration
 	--help/-h:		show this message
 	--no-entry:		do not generate a container entry in the application list
 	--dry-run/-d:		only print the container manager command generated
@@ -440,6 +444,11 @@ while :; do
 				shift
 				shift
 			fi
+			;;
+		--isolated)
+			shift
+			isolated=1
+			unshare_process=1
 			;;
 		--) # End of all options.
 			shift
@@ -693,6 +702,21 @@ generate_create_command()
 		result_command="${result_command}
 			--pid host"
 	fi
+
+	# If we have a home prefix to use, ano no custom home set, then we set
+	# the custom home to be PREFIX/CONTAINER_NAME
+	if [ -n "${container_home_prefix}" ] && [ -z "${container_user_custom_home}" ]; then
+		container_user_custom_home="${container_home_prefix}/${container_name}"
+	fi
+
+	if [ $isolated -eq 0 ]; then
+		container_home="${container_user_custom_home:-"${container_user_home}"}"
+		home_volume="\"${container_user_home}\":\"${container_user_home}\""
+	else
+		container_home="${container_user_home}"
+		home_volume="\"${container_user_custom_home:-"${container_user_home}"}\":\"${container_user_home}\""
+	fi
+
 	# Mount useful stuff inside the container.
 	# We also mount host's root filesystem to /run/host, to be able to syphon
 	# dynamic configurations from the host.
@@ -706,48 +730,75 @@ generate_create_command()
 	result_command="${result_command}
 		--label \"manager=distrobox\"
 		--label \"distrobox.unshare_groups=${unshare_groups}\"
+		--label \"distrobox.isolated=${isolated}\"
 		--env \"SHELL=$(basename "${SHELL:-"/bin/bash"}")\"
 		--env \"HOME=${container_user_home}\"
 		--env \"container=${container_manager}\"
 		--env \"TERMINFO_DIRS=/usr/share/terminfo:/run/host/usr/share/terminfo\"
 		--env \"CONTAINER_ID=${container_name}\"
-		--volume /tmp:/tmp:rslave
 		--volume \"${distrobox_entrypoint_path}\":/usr/bin/entrypoint:ro
-		--volume \"${distrobox_export_path}\":/usr/bin/distrobox-export:ro
-		--volume \"${distrobox_hostexec_path}\":/usr/bin/distrobox-host-exec:ro
-		--volume \"${container_user_home}\":\"${container_user_home}\":rslave"
+		--volume ${home_volume}:rslave"
 
-	# Due to breaking change in https://github.com/opencontainers/runc/commit/d4b670fca6d0ac606777376440ffe49686ce15f4
-	# now we cannot mount /:/run/host as before, as it will try to mount RO partitions as RW thus breaking things.
-	# This will ensure we will mount directories one-by-one thus avoiding this problem.
-	#
-	# This happens ONLY with podman+runc, docker and lilipod are unaffected, so let's do this only if we have podman AND runc.
-	if echo "${container_manager}" | grep -q "podman" && ${container_manager} info 2> /dev/null | grep -q runc > /dev/null 2>&1; then
-		for rootdir in /*; do
-
-			# Skip symlinks
-			if [ -L "${rootdir}" ]; then
-				continue
-			fi
-
-			# Find if the directory belongs to a RO mount, if do, mount it as RO+Rslave
-			if findmnt --notruncate --noheadings --list --output OPTIONS --target "${rootdir}" |
-				tr ',' '\n' | grep -q "^ro$"; then
-
-				result_command="${result_command}
-				--volume ${rootdir}:/run/host${rootdir}:ro,rslave"
-				continue
-			fi
-
-			# Else we mount it RW+Rslave
-			result_command="${result_command}
-				--volume ${rootdir}:/run/host${rootdir}:rslave"
-		done
-	else
-		# We're either on podman+crun, docker or lilipod, let's keep old behaviour
+	if [ "${isolated}" -eq 0 ]; then
 		result_command="${result_command}
-			--volume /:/run/host/:rslave"
+			--volume \"${distrobox_hostexec_path}\":/usr/bin/distrobox-host-exec:ro
+			--volume \"${distrobox_export_path}\":/usr/bin/distrobox-export:ro"
 
+		# Due to breaking change in https://github.com/opencontainers/runc/commit/d4b670fca6d0ac606777376440ffe49686ce15f4
+		# now we cannot mount /:/run/host as before, as it will try to mount RO partitions as RW thus breaking things.
+		# This will ensure we will mount directories one-by-one thus avoiding this problem.
+		#
+		# This happens ONLY with podman+runc, docker and lilipod are unaffected, so let's do this only if we have podman AND runc.
+		if echo "${container_manager}" | grep -q "podman" && ${container_manager} info 2> /dev/null | grep -q runc > /dev/null 2>&1; then
+			for rootdir in /*; do
+
+				# Skip symlinks
+				if [ -L "${rootdir}" ]; then
+					continue
+				fi
+
+				# Find if the directory belongs to a RO mount, if do, mount it as RO+Rslave
+				if findmnt --notruncate --noheadings --list --output OPTIONS --target "${rootdir}" |
+					tr ',' '\n' | grep -q "^ro$"; then
+
+					result_command="${result_command}
+					--volume ${rootdir}:/run/host${rootdir}:ro,rslave"
+					continue
+				fi
+
+				# Else we mount it RW+Rslave
+				result_command="${result_command}
+					--volume ${rootdir}:/run/host${rootdir}:rslave"
+			done
+		else
+			# We're either on podman+crun, docker or lilipod, let's keep old behaviour
+			result_command="${result_command}
+				--volume /:/run/host/:rslave"
+
+		fi
+
+		result_command="${result_command}
+			--volume /tmp:/tmp:rslave"
+	else
+		if [ -f "/etc/locale.conf" ]; then
+			result_command="${result_command}
+				--volume /etc/locale.conf:/run/host/etc/locale.conf:ro"
+		elif [ -f "/etc/default/locale" ]; then
+			result_command="${result_command}
+				--volume /etc/default/locale:/run/host/etc/default/locale:ro"
+		fi
+
+		result_command="${result_command}
+			--volume /usr/share/themes:/run/host/usr/share/themes:rslave
+			--volume /usr/share/icons:/run/host/usr/share/icons:rslave
+			--volume /usr/share/fonts:/run/host/usr/share/fonts:rslave
+			--volume /usr/share/terminfo:/run/host/usr/share/terminfo:rslave"
+		
+		result_command="${result_command}
+			--mount type=tmpfs,destination=/tmp"
+
+		result_command="${result_command}
+			--volume \"${container_user_home}/.local/share/applications\":\"/run/host${container_user_home}/.local/share/applications\":rslave"
 	fi
 
 	if [ "${unshare_devsys}" -eq 0 ]; then
@@ -854,17 +905,11 @@ generate_create_command()
 		fi
 	done
 
-	# If we have a home prefix to use, ano no custom home set, then we set
-	# the custom home to be PREFIX/CONTAINER_NAME
-	if [ -n "${container_home_prefix}" ] && [ -z "${container_user_custom_home}" ]; then
-		container_user_custom_home="${container_home_prefix}/${container_name}"
-	fi
-
-	# If we have a custom home to use,
+	# If container is not isolated and we have a custom home to use,
 	#	1- override the HOME env variable
 	#	2- export the DISTROBOX_HOST_HOME env variable pointing to original HOME
 	# 	3- mount the custom home inside the container.
-	if [ -n "${container_user_custom_home}" ]; then
+	if [ "${isolated}" -eq 0 ] && [ -n "${container_user_custom_home}" ]; then
 		if [ ! -d "${container_user_custom_home}" ]; then
 			if ! mkdir -p "${container_user_custom_home}"; then
 				printf >&2 "Do you have permission to write to %s?\n" "${container_user_custom_home}"
@@ -879,7 +924,7 @@ generate_create_command()
 
 	# Mount also the /var/home dir on ostree based systems
 	# do this only if $HOME was not already set to /var/home/username
-	if [ "${container_user_home}" != "/var/home/${container_user_name}" ] &&
+	if [ "${isolated}" -eq 0 ] && [ "${container_user_home}" != "/var/home/${container_user_name}" ] &&
 		[ -d "/var/home/${container_user_name}" ]; then
 
 		result_command="${result_command}
@@ -889,9 +934,39 @@ generate_create_command()
 	# Mount also the XDG_RUNTIME_DIR to ensure functionality of the apps.
 	# This is skipped in case of initful containers, so that a dedicated
 	# systemd user session can be used.
-	if [ -d "/run/user/${container_user_uid}" ] && [ "${init}" -eq 0 ]; then
-		result_command="${result_command}
-			--volume /run/user/${container_user_uid}:/run/user/${container_user_uid}:rslave"
+	xdg_runtime_dir="${XDG_RUNTIME_DIR:-"/run/user/${container_user_uid}"}"
+
+	if [ -d "${xdg_runtime_dir}" ]; then
+		if [ "${isolated}" -eq 0 ]; then
+			if  [ "${init}" -eq 0 ]; then
+				result_command="${result_command}
+					--volume ${xdg_runtime_dir}:/run/user/${container_user_uid}:rslave"
+			fi
+		else
+			run_prefix=""
+			if [ "${init}" -eq 1 ]; then
+				run_prefix="/run/host"
+			fi
+
+			SHARED_RESOURCES="
+				wayland-*
+				pipewire-?
+				pipewire-?.lock
+				pulse
+			"
+
+			for entry in ${SHARED_RESOURCES}; do
+				for resource in ${xdg_runtime_dir}/${entry}; do
+					propagation="ro"
+					if [ -d "${resource}" ]; then
+						propagation="rslave"
+					fi
+
+					result_command="${result_command}
+							--volume \"${resource}\":\"${run_prefix}/run/user/${container_user_uid}/$(basename ${resource})\":${propagation}"
+				done
+			done
+		fi
 	fi
 
 	# These are dynamic configs needed by the container to function properly
@@ -979,9 +1054,10 @@ generate_create_command()
 		--name \"${container_user_name}\"
 		--user ${container_user_uid}
 		--group ${container_user_gid}
-		--home \"${container_user_custom_home:-"${container_user_home}"}\"
+		--home \"${container_home}\"
 		--init \"${init}\"
 		--nvidia \"${nvidia}\"
+		--isolated \"${isolated}\"
 		--pre-init-hooks \"${container_pre_init_hook}\"
 		--additional-packages \"${container_additional_packages}\"
 		-- '${container_init_hook}'
