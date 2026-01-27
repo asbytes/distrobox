@@ -32,6 +32,7 @@
 #	DBX_CONTAINER_HOSTNAME
 #	DBX_CONTAINER_GENERATE_ENTRY
 #	DBX_NON_INTERACTIVE
+#	DBX_PODMAN_ROOT
 #	DBX_VERBOSE
 #	DBX_SUDO_PROGRAM
 #	DBX_USERNS_NOLIMIT
@@ -82,6 +83,7 @@ init=0
 non_interactive=0
 nvidia=0
 nopasswd=0
+podman_root=""
 unshare_ipc=0
 unshare_groups=0
 unshare_netns=0
@@ -155,6 +157,7 @@ fi
 [ -n "${DBX_CONTAINER_HOSTNAME}" ] && container_hostname="${DBX_CONTAINER_HOSTNAME}"
 [ -n "${DBX_CONTAINER_GENERATE_ENTRY}" ] && container_generate_entry="${DBX_CONTAINER_GENERATE_ENTRY}"
 [ -n "${DBX_NON_INTERACTIVE}" ] && non_interactive="${DBX_NON_INTERACTIVE}"
+[ -n "${DBX_PODMAN_ROOT}" ] && podman_root="${DBX_PODMAN_ROOT}"
 [ -n "${DBX_VERBOSE}" ] && verbose="${DBX_VERBOSE}"
 [ -n "${DBX_USERNS_NOLIMIT}" ] && userns_nolimit="${DBX_USERNS_NOLIMIT}"
 
@@ -555,6 +558,11 @@ if ! command -v "${container_manager}" > /dev/null && [ "${dryrun}" -eq 0 ]; the
 	printf >&2 "\thttps://github.com/89luca89/distrobox/blob/main/docs/compatibility.md\n"
 	exit 127
 fi
+
+if [ "${container_manager}" = "podman" ] && [ -n "${podman_root}" ]; then
+	container_manager="${container_manager} --root=${podman_root}"
+fi
+
 # add  verbose if -v is specified
 if [ "${verbose}" -ne 0 ]; then
 	container_manager="${container_manager} --log-level debug"
@@ -1083,6 +1091,7 @@ if eval ${cmd} > /dev/null; then
 	# We've created the box, let's also create the entry
 	if [ "${rootful}" -eq 0 ]; then
 		if [ "${container_generate_entry}" -ne 0 ]; then
+			[ -n "${podman_root}" ] && export DBX_PODMAN_ROOT="${podman_root}"
 			"${distrobox_genentry_path}" "${container_name}"
 		fi
 	fi

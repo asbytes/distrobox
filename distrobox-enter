@@ -33,6 +33,7 @@
 #	DBX_CONTAINER_NAME
 #	DBX_CONTAINER_CLEAN_PATH
 #	DBX_NON_INTERACTIVE
+#	DBX_PODMAN_ROOT
 #	DBX_VERBOSE
 #	DBX_SKIP_WORKDIR
 #	DBX_SUDO_PROGRAM
@@ -95,6 +96,7 @@ container_manager_additional_flags=""
 container_name=""
 container_name_default="my-distrobox"
 non_interactive=0
+podman_root=""
 
 # Use cd + dirname + pwd so that we do not have relative paths in mount points
 # We're not using "realpath" here so that symlinks are not resolved this way
@@ -151,6 +153,7 @@ fi
 [ -n "${DBX_CONTAINER_CLEAN_PATH}" ] && clean_path=1
 [ -n "${DBX_SKIP_WORKDIR}" ] && skip_workdir="${DBX_SKIP_WORKDIR}"
 [ -n "${DBX_NON_INTERACTIVE}" ] && non_interactive="${DBX_NON_INTERACTIVE}"
+[ -n "${DBX_PODMAN_ROOT}" ] && podman_root="${DBX_PODMAN_ROOT}"
 [ -n "${DBX_VERBOSE}" ] && verbose="${DBX_VERBOSE}"
 
 # Fixup variable=[true|false], in case we find it in the config file(s)
@@ -338,6 +341,10 @@ if ! command -v "${container_manager}" > /dev/null && [ "${dryrun}" -eq 0 ]; the
 	printf >&2 "or:\n"
 	printf >&2 "\thttps://github.com/89luca89/distrobox/blob/main/docs/compatibility.md\n"
 	exit 127
+fi
+
+if [ "${container_manager}" = "podman" ] && [ -n "${podman_root}" ]; then
+	container_manager="${container_manager} --root=${podman_root}"
 fi
 
 # add  verbose if -v is specified

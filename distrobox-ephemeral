@@ -22,6 +22,7 @@
 # Optional env variables:
 #	DBX_CONTAINER_MANAGER
 #	DBX_CONTAINER_NAME
+#	DBX_PODMAN_ROOT
 #	DBX_VERBOSE
 #	DBX_SUDO_PROGRAM
 
@@ -60,6 +61,7 @@ container_additional_packages=""
 container_init_hook=" "
 container_manager_additional_flags=""
 container_pre_init_hook=" "
+podman_root=""
 
 # Source configuration files, this is done in an hierarchy so local files have
 # priority over system defaults
@@ -88,6 +90,7 @@ for config_file in ${config_files}; do
 done
 
 [ -n "${DBX_VERBOSE}" ] && verbose="${DBX_VERBOSE}"
+[ -n "${DBX_PODMAN_ROOT}" ] && podman_root="${DBX_PODMAN_ROOT}"
 
 # Fixup variable=[true|false], in case we find it in the config file(s)
 [ "${verbose}" = "true" ] && verbose=1
@@ -213,6 +216,9 @@ fi
 if [ "${rootful}" -ne 0 ]; then
 	extra_flags="${extra_flags} --root"
 fi
+
+# propagate podman root value to underlying command
+[ -n "${podman_root}" ] && export DBX_PODMAN_ROOT="${podman_root}"
 
 # generate_ephemeral_create_command will produce a distrobox-create command to execute.
 # Arguments:

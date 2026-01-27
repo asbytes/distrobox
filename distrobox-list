@@ -21,6 +21,7 @@
 # POSIX
 # Optional env variables:
 #	DBX_CONTAINER_MANAGER
+#	DBX_PODMAN_ROOT
 #	DBX_VERBOSE
 #	DBX_SUDO_PROGRAM
 
@@ -51,6 +52,7 @@ no_color=0
 verbose=0
 version="1.8.2.3"
 container_manager="autodetect"
+podman_root=""
 
 # Source configuration files, this is done in an hierarchy so local files have
 # priority over system defaults
@@ -94,6 +96,7 @@ if [ "$(id -ru)" -ne 0 ]; then
 	distrobox_sudo_program=${DBX_SUDO_PROGRAM:-${distrobox_sudo_program:-"sudo"}}
 fi
 [ -n "${DBX_CONTAINER_MANAGER}" ] && container_manager="${DBX_CONTAINER_MANAGER}"
+[ -n "${DBX_PODMAN_ROOT}" ] && podman_root="${DBX_PODMAN_ROOT}"
 
 # show_help will print usage to stdout.
 # Arguments:
@@ -213,6 +216,11 @@ if ! command -v "${container_manager}" > /dev/null; then
 	printf >&2 "\thttps://github.com/89luca89/distrobox/blob/main/docs/compatibility.md\n"
 	exit 127
 fi
+
+if [ "${container_manager}" = "podman" ] && [ -n "${podman_root}" ]; then
+	container_manager="${container_manager} --root=${podman_root}"
+fi
+
 # add verbose if -v is specified
 if [ "${verbose}" -ne 0 ]; then
 	container_manager="${container_manager} --log-level debug"

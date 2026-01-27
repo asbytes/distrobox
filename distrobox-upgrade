@@ -42,6 +42,7 @@ running=0
 container_manager="autodetect"
 distrobox_flags=""
 distrobox_path="$(dirname "$(realpath "${0}")")"
+podman_root=""
 rootful=0
 verbose=0
 version="1.8.2.3"
@@ -73,6 +74,7 @@ for config_file in ${config_files}; do
 done
 
 [ -n "${DBX_CONTAINER_MANAGER}" ] && container_manager="${DBX_CONTAINER_MANAGER}"
+[ -n "${DBX_PODMAN_ROOT}" ] && podman_root="${DBX_PODMAN_ROOT}"
 [ -n "${DBX_VERBOSE}" ] && verbose="${DBX_VERBOSE}"
 
 # Fixup variable=[true|false], in case we find it in the config file(s)
@@ -233,6 +235,10 @@ if ! command -v "${container_manager}" > /dev/null; then
 	printf >&2 "or:\n"
 	printf >&2 "\thttps://github.com/89luca89/distrobox/blob/main/docs/compatibility.md\n"
 	exit 127
+fi
+
+if [ "${container_manager}" = "podman" ] && [ -n "${podman_root}" ]; then
+	container_manager="${container_manager} --root=${podman_root}"
 fi
 
 # add  verbose if -v is specified

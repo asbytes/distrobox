@@ -21,6 +21,7 @@
 # POSIX
 # Optional env variables:
 #	DBX_CONTAINER_MANAGER
+#	DBX_PODMAN_ROOT
 #	DBX_VERBOSE
 
 # Despite of running this script via SUDO/DOAS being not supported (the
@@ -52,6 +53,7 @@ container_name_default="my-distrobox"
 delete=0
 icon="auto"
 icon_default="${XDG_DATA_HOME:-${HOME}/.local/share}/icons/terminal-distrobox-icon.svg"
+podman_root=""
 verbose=0
 online=0
 version="1.8.2.3"
@@ -83,6 +85,7 @@ for config_file in ${config_files}; do
 done
 
 [ -n "${DBX_CONTAINER_MANAGER}" ] && container_manager="${DBX_CONTAINER_MANAGER}"
+[ -n "${DBX_PODMAN_ROOT}" ] && podman_root="${DBX_PODMAN_ROOT}"
 [ -n "${DBX_VERBOSE}" ] && verbose="${DBX_VERBOSE}"
 
 # Fixup variable=[true|false], in case we find it in the config file(s)
@@ -267,6 +270,11 @@ if ! command -v "${container_manager}" > /dev/null; then
 	printf >&2 "or:\n"
 	printf >&2 "\thttps://github.com/89luca89/distrobox/blob/main/docs/compatibility.md\n"
 	exit 127
+fi
+
+if [ "${container_manager}" = "podman" ] && [ -n "${podman_root}" ]; then
+	container_manager="${container_manager} --root=${podman_root}"
+	container_manager_cp_command="${container_manager} --root=${podman_root} cp"
 fi
 
 # add verbose if -v is specified

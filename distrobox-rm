@@ -24,6 +24,7 @@
 #	DBX_CONTAINER_NAME
 #	DBX_CONTAINER_RM_CUSTOM_HOME
 #	DBX_NON_INTERACTIVE
+#	DBX_PODMAN_ROOT
 #	DBX_VERBOSE
 #	DBX_SUDO_PROGRAM
 
@@ -54,6 +55,7 @@ distrobox_path="$(dirname "$(realpath "${0}")")"
 force=0
 force_flag=""
 non_interactive=0
+podman_root=""
 # If the user runs this script as root in a login shell, set rootful=1.
 # There's no need for them to pass the --root flag option in such cases.
 [ "$(id -ru)" -eq 0 ] && rootful=1 || rootful=0
@@ -91,6 +93,7 @@ done
 [ -n "${DBX_CONTAINER_MANAGER}" ] && container_manager="${DBX_CONTAINER_MANAGER}"
 [ -n "${DBX_CONTAINER_RM_CUSTOM_HOME}" ] && rm_home="${DBX_CONTAINER_RM_CUSTOM_HOME}"
 [ -n "${DBX_NON_INTERACTIVE}" ] && non_interactive="${DBX_NON_INTERACTIVE}"
+[ -n "${DBX_PODMAN_ROOT}" ] && podman_root="${DBX_PODMAN_ROOT}"
 [ -n "${DBX_VERBOSE}" ] && verbose="${DBX_VERBOSE}"
 
 # Fixup variable=[true|false], in case we find it in the config file(s)
@@ -253,6 +256,10 @@ if ! command -v "${container_manager}" > /dev/null; then
 	printf >&2 "or:\n"
 	printf >&2 "\thttps://github.com/89luca89/distrobox/blob/main/docs/compatibility.md\n"
 	exit 127
+fi
+
+if [ "${container_manager}" = "podman" ] && [ -n "${podman_root}" ]; then
+	container_manager="${container_manager} --root=${podman_root}"
 fi
 
 # add verbose if -v is specified
