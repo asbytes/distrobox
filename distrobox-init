@@ -252,7 +252,7 @@ fi
 
 if [ -f /run/.containerenv ]; then
 	. /run/.containerenv
-	if [ "x$rootless" = "x0" ]; then
+	if [ "x${rootless:-}" = "x0" ]; then
 		rootful=1
 	fi
 fi
