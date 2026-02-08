@@ -559,6 +559,8 @@ if ! command -v "${container_manager}" > /dev/null && [ "${dryrun}" -eq 0 ]; the
 	exit 127
 fi
 
+container_manager_name="${container_manager}"
+
 if [ "${container_manager}" = "podman" ] && [ -n "${podman_root}" ]; then
 	container_manager="${container_manager} --root=${podman_root}"
 fi
@@ -716,7 +718,7 @@ generate_create_command()
 		--label \"distrobox.unshare_groups=${unshare_groups}\"
 		--env \"SHELL=$(basename "${SHELL:-"/bin/bash"}")\"
 		--env \"HOME=${container_user_home}\"
-		--env \"container=${container_manager}\"
+		--env \"container=${container_manager_name}\"
 		--env \"TERMINFO_DIRS=/usr/share/terminfo:/run/host/usr/share/terminfo\"
 		--env \"CONTAINER_ID=${container_name}\"
 		--volume /tmp:/tmp:rslave
