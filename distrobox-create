@@ -690,11 +690,15 @@ generate_create_command()
 	result_command="${result_command}
 		--hostname \"${container_hostname}\"
 		--name \"${container_name}\"
-		--privileged
 		--security-opt label=disable
 		--security-opt apparmor=unconfined
 		--pids-limit=-1
 		--user root:root"
+
+	if [ "${isolated}" -eq 0 ]; then
+		result_command="${result_command}
+			--privileged"
+	fi
 
 	if [ "${unshare_ipc}" -eq 0 ]; then
 		result_command="${result_command}

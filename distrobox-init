@@ -457,7 +457,7 @@ setup_pkg_manager_hooks()
 {
 	if {
 		[ -d "/etc/dpkg/dpkg.cfg.d/" ] || [ -d "/usr/share/libalpm/scripts" ]
-	} && [ "${init}" -eq 0 ]; then
+	} && [ "${init}" -eq 0 ] && [ "${isolated}" -eq 0 ]; then
 		cat << EOF > /etc/distrobox-pre-hook.sh
 #!/bin/sh
 mounts="${HOST_MOUNTS_RO_INIT}"
@@ -502,7 +502,7 @@ setup_deb_exceptions()
 
 	# In case of an DEB distro, we can specify that our bind_mount directories
 	# have to be ignored. This prevents conflicts during package installations.
-	if [ "${init}" -eq 0 ]; then
+	if [ "${init}" -eq 0 ] && [ "${isolated}" -eq 0 ]; then
 		# Loop through all the environment vars
 		# and export them to the container.
 		mkdir -p /etc/dpkg/dpkg.cfg.d/
@@ -536,7 +536,7 @@ setup_pacman_exceptions()
 	# Workarounds for pacman. We need to exclude the paths by using a pre-hook to umount them and a
 	# post-hook to remount them. Additionally we neutralize the systemd-post-hooks as they do not
 	# work on a rootless container system.
-	if [ -d "/usr/share/libalpm/scripts" ] && [ "${init}" -eq 0 ]; then
+	if [ -d "/usr/share/libalpm/scripts" ] && [ "${init}" -eq 0 ] && [ "${isolated}" -eq 0 ]; then
 		# in case we're not using an init image, neutralize systemd post installation hooks
 		# so that we do not encounter problems along the way.
 		# This will be removed if we're using --init.
@@ -582,7 +582,7 @@ setup_rpm_exceptions()
 {
 	# In case of an RPM distro, we can specify that our bind_mount directories
 	# are in fact net shares. This prevents conflicts during package installations.
-	if [ "${init}" -eq 0 ]; then
+	if [ "${init}" -eq 0 ] && [ "${isolated}" -eq 0 ]; then
 		mkdir -p /usr/lib/rpm/macros.d/
 		# Loop through all the environment vars
 		# and export them to the container.
@@ -1885,300 +1885,325 @@ EOF
 	chmod +x /usr/local/bin/su
 fi
 
-###############################################################################
-printf "distrobox: Setting up devpts mounts...\n"
+if [ "${isolated}" -eq 0 ]; then
+	###############################################################################
+	printf "distrobox: Setting up devpts mounts...\n"
 
-# First we need to ensure we have a tty group to assign /dev/pts to
-if ! grep -q tty /etc/group; then
-	printf "%s" 'tty:x:5:' >> /etc/group
-fi
-
-# Instantiate a new /dev/pts mount, this will ensure pseudoterminals are container-scoped
-# and make easier in case of initful containers to have a separate /dev/console
-#
-# Podman supports a mount option to do this at creation time, but we're doing it
-# here to support also other container rmanagers which does not support that flag
-mount -t devpts devpts -o noexec,nosuid,newinstance,ptmxmode=0666,mode=0620,gid=tty /dev/pts/
-mount --bind /dev/pts/ptmx /dev/ptmx
-
-# Change mount propagation to shared to make the environment more similar to a
-# modern Linux system, e.g. with Systemd as PID 1.
-mount --make-rshared /
-###############################################################################
-
-###############################################################################
-printf "distrobox: Setting up read-only mounts...\n"
-
-for host_mount_ro in ${HOST_MOUNTS_RO}; do
-	# Mounting read-only in a user namespace will trigger a check to see if certain
-	# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
-	locked_flags="$(get_locked_mount_flags /run/host"${host_mount_ro}")"
-	if ! mount_bind /run/host"${host_mount_ro}" "${host_mount_ro}" ro"${locked_flags:+,${locked_flags}}"; then
-		printf "Warning: %s integration with the host failed, runtime sync for %s disabled.\n" "${host_mount_ro}" "${host_mount_ro}"
-		# Fallback options for files, we do a hard copy of it
-		if [ -f /run/host"${host_mount_ro}" ]; then
-			if ! (rm -f "${host_mount_ro}" && cp -f /run/host"${host_mount_ro}" "${host_mount_ro}"); then
-				printf "Warning: Hard copy failed. Error: %s\n" "$(cp -f /run/host"${host_mount_ro}" "${host_mount_ro}" 2>&1)"
-			fi
-		fi
-	fi
-done
-###############################################################################
-
-###############################################################################
-printf "distrobox: Setting up read-write mounts...\n"
-
-# On some ostree systems, home is in /var/home, but most of the software expects
-# it to be in /home. In the hosts systems this is fixed by using a symlink.
-# Do something similar here with a bind mount.
-if [ -e "/var/home/${container_user_name}" ]; then
-	if ! mount_bind "/run/host/var/home/${container_user_name}" "/home/${container_user_name}"; then
-		printf "Warning: Cannot bind mount %s to /run/host%s\n" "/var/home" "/home"
-	fi
-fi
-
-for host_mount in ${HOST_MOUNTS}; do
-	if ! mount_bind /run/host"${host_mount}" "${host_mount}"; then
-		printf "Warning: Cannot bind mount %s to /run/host%s\n" "${host_mount}" "${host_mount}"
-	fi
-done
-###############################################################################
-
-###############################################################################
-printf "distrobox: Setting up host's sockets integration...\n"
-# Find all the user's socket and mount them inside the container
-# this will allow for continuity of functionality between host and container
-#
-# for example using `podman --remote` to control the host's podman from inside
-# the container or accessing docker and libvirt sockets.
-host_sockets="$(find /run/host/run \
-	-path /run/host/run/media -prune -o \
-	-path /run/host/run/timeshift -prune -o \
-	-name 'user' -prune -o \
-	-name 'bees' -prune -o \
-	-name 'nscd' -prune -o \
-	-name 'schroot' -prune -o \
-	-name 'system_bus_socket' -prune -o \
-	-name 'io.systemd.Multiplexer' -prune -o \
-	-name 'io.systemd.DropIn' -prune -o \
-	-name 'io.systemd.NameServiceSwitch' -prune -o \
-	-type s -print \
-	2> /dev/null || :)"
-
-# we're excluding system dbus socket, nscd socket and systemd-userdbd sockets here. Including them will
-# create many problems with package managers thinking they have access to
-# system dbus, user auth cache misused or query wrong user information.
-for host_socket in ${host_sockets}; do
-	container_socket="$(printf "%s" "${host_socket}" | sed 's|/run/host||g')"
-	# Check if the socket already exists or the symlink already exists
-	if [ ! -S "${container_socket}" ] && [ ! -L "${container_socket}" ]; then
-		# link it.
-		rm -f "${container_socket}"
-		mkdir -p "$(dirname "${container_socket}")"
-		if ! ln -s "${host_socket}" "${container_socket}"; then
-			printf "Warning: Cannot link socket %s to %s\n" "${host_socket}" "${container_socket}"
-		fi
-	fi
-done
-###############################################################################
-
-# If --nvidia, we try to integrate host's nvidia drivers in to the guest
-if [ "${nvidia}" -eq 1 ]; then
-	printf "distrobox: Setting up host's nvidia integration...\n"
-
-	# Refresh ldconfig cache, also detect if there are empty files remaining
-	# and clean them.
-	# This could happen when upgrading drivers and changing versions.
-	find /usr/lib* -empty -iname "*.so.*" -exec sh -c 'rm -rf "$1" || umount "$1" && rm -rf "$1"' sh {} ';' || :
-	find /usr/ /etc/ -empty -iname "*nvidia*" -exec sh -c 'rm -rf "$1" || umount "$1" && rm -rf "$1"' sh {} ';' || :
-
-	# First we find all generic config files we might need
-	NVIDIA_FILES="$(find /run/host/etc/ -not -type d \
-		-wholename "*nvidia*" || :)"
-	for nvidia_file in ${NVIDIA_FILES}; do
-		dest_file="$(printf "%s" "${nvidia_file}" | sed 's|/run/host||g')"
-
-		if [ ! -e "$(dirname "${dest_file}")" ]; then
-			if ! mkdir -p "$(dirname "${dest_file}")"; then
-				printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
-				continue
-			fi
-		fi
-		if [ ! -w "$(dirname "${dest_file}")" ]; then
-			printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
-			continue
-		fi
-
-		type="file"
-		if [ -L "${nvidia_file}" ]; then
-			type="link"
-		fi
-
-		if [ "${type}" = "link" ]; then
-			nvidia_file="$(readlink -fm "${nvidia_file}")"
-		fi
-		# Mounting read-only in a user namespace will trigger a check to see if certain
-		# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
-		locked_flags="$(get_locked_mount_flags "${nvidia_file}")"
-		mount_bind "${nvidia_file}" "${dest_file}" ro"${locked_flags:+,${locked_flags}}"
-	done
-
-	# Then we find all non-lib files we need, this includes
-	#       - egl files
-	#       - icd files
-	#       - doc files
-	#       - src files
-	NVIDIA_CONFS="$(find /run/host/usr/ -not -type d \
-		-wholename "*glvnd/egl_vendor.d/10_nvidia.json" \
-		-o -wholename "*X11/xorg.conf.d/10-nvidia.conf" \
-		-o -wholename "*X11/xorg.conf.d/nvidia-drm-outputclass.conf" \
-		-o -wholename "*egl/egl_external_platform.d/10_nvidia_wayland.json" \
-		-o -wholename "*egl/egl_external_platform.d/15_nvidia_gbm.json" \
-		-o -wholename "*nvidia/nvoptix.bin" \
-		-o -wholename "*vulkan/icd.d/nvidia_icd*.json" \
-		-o -wholename "*vulkan/icd.d/nvidia_layers.json" \
-		-o -wholename "*vulkan/implicit_layer.d/nvidia_layers.json" \
-		-o -wholename "*nvidia.icd" \
-		-o -wholename "*nvidia.yaml" \
-		-o -wholename "*nvidia.json" || :)"
-	for nvidia_file in ${NVIDIA_CONFS}; do
-		dest_file="$(printf "%s" "${nvidia_file}" | sed 's|/run/host||g')"
-
-		if [ ! -e "$(dirname "${dest_file}")" ]; then
-			if ! mkdir -p "$(dirname "${dest_file}")"; then
-				printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
-				continue
-			fi
-		fi
-		if [ ! -w "$(dirname "${dest_file}")" ]; then
-			printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
-			continue
-		fi
-		# Mounting read-only in a user namespace will trigger a check to see if certain
-		# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
-		locked_flags="$(get_locked_mount_flags "${nvidia_file}")"
-		mount_bind "${nvidia_file}" "${dest_file}" ro"${locked_flags:+,${locked_flags}}"
-	done
-
-	# Then we find all the CLI utilities
-	NVIDIA_BINARIES="$(find /run/host/bin/ /run/host/sbin/ /run/host/usr/bin/ /run/host/usr/sbin/ -not -type d \
-		-iname "*nvidia*" || :)"
-	for nvidia_file in ${NVIDIA_BINARIES}; do
-		dest_file="$(printf "%s" "${nvidia_file}" | sed 's|/run/host||g')"
-
-		if [ ! -e "$(dirname "${dest_file}")" ]; then
-			if ! mkdir -p "$(dirname "${dest_file}")"; then
-				printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
-				continue
-			fi
-		fi
-		if [ ! -w "$(dirname "${dest_file}")" ]; then
-			printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
-			continue
-		fi
-
-		type="file"
-		if [ -L "${nvidia_file}" ]; then
-			type="link"
-		fi
-
-		if [ "${type}" = "link" ]; then
-			nvidia_file="$(readlink -fm "${nvidia_file}")"
-		fi
-		# Mounting read-only in a user namespace will trigger a check to see if certain
-		# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
-		locked_flags="$(get_locked_mount_flags "${nvidia_file}")"
-		mount_bind "${nvidia_file}" "${dest_file}" ro"${locked_flags:+,${locked_flags}}"
-	done
-
-	# Find where the system expects libraries to be put
-	lib32_dir="/usr/lib/"
-	lib64_dir="/usr/lib/"
-	if [ -e "/usr/lib/x86_64-linux-gnu" ]; then
-		lib64_dir="/usr/lib/x86_64-linux-gnu/"
-		lib32_dir="/usr/lib/i386-linux-gnu/"
-	elif [ -e "/usr/lib64" ]; then
-		lib64_dir="/usr/lib64/"
-	fi
-	if [ -e "/usr/lib32" ]; then
-		lib32_dir="/usr/lib32/"
+	# First we need to ensure we have a tty group to assign /dev/pts to
+	if ! grep -q tty /etc/group; then
+		printf "%s" 'tty:x:5:' >> /etc/group
 	fi
 
-	# Then we find all the ".so" libraries, these are searched separately
-	# because we need to extract the relative path to mount them in the
-	# correct path based on the guest's setup
+	# Instantiate a new /dev/pts mount, this will ensure pseudoterminals are container-scoped
+	# and make easier in case of initful containers to have a separate /dev/console
 	#
-	# /usr/lib64 is common in Arch or RPM based distros, while /usr/lib/x86_64-linux-gnu is
-	# common on Debian derivatives, so we need to adapt between the two nomenclatures.
-	NVIDIA_LIBS="$(find /run/host/usr/lib*/ -not -type d \
-		-iname "*lib*nvidia*.so*" \
-		-o -iname "*nvidia*.so*" \
-		-o -iname "libcuda*.so*" \
-		-o -iname "libnvcuvid*" \
-		-o -iname "libnvoptix*" || :)"
-	for nvidia_lib in ${NVIDIA_LIBS}; do
-		dest_file="$(printf "%s" "${nvidia_lib}" |
-			sed "s|/run/host/usr/lib/x86_64-linux-gnu/|${lib64_dir}|g" |
-			sed "s|/run/host/usr/lib/i386-linux-gnu/|${lib32_dir}|g" |
-			sed "s|/run/host/usr/lib64/|${lib64_dir}|g" |
-			sed "s|/run/host/usr/lib32/|${lib32_dir}|g" |
-			sed "s|/run/host/usr/lib/|${lib32_dir}|g")"
+	# Podman supports a mount option to do this at creation time, but we're doing it
+	# here to support also other container rmanagers which does not support that flag
+	mount -t devpts devpts -o noexec,nosuid,newinstance,ptmxmode=0666,mode=0620,gid=tty /dev/pts/
+	mount --bind /dev/pts/ptmx /dev/ptmx
 
-		# If file exists, just continue
-		# this may happen for directories like /usr/lib/nvidia/xorg/foo.so
-		# where the directory is already bind mounted (ro) and we don't need
-		# to mount further files in it.
-		if [ -e "${dest_file}" ]; then
-			continue
+	# Change mount propagation to shared to make the environment more similar to a
+	# modern Linux system, e.g. with Systemd as PID 1.
+	mount --make-rshared /
+	###############################################################################
+
+	###############################################################################
+	printf "distrobox: Setting up read-only mounts...\n"
+
+	for host_mount_ro in ${HOST_MOUNTS_RO}; do
+		# Mounting read-only in a user namespace will trigger a check to see if certain
+		# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
+		locked_flags="$(get_locked_mount_flags /run/host"${host_mount_ro}")"
+		if ! mount_bind /run/host"${host_mount_ro}" "${host_mount_ro}" ro"${locked_flags:+,${locked_flags}}"; then
+			printf "Warning: %s integration with the host failed, runtime sync for %s disabled.\n" "${host_mount_ro}" "${host_mount_ro}"
+			# Fallback options for files, we do a hard copy of it
+			if [ -f /run/host"${host_mount_ro}" ]; then
+				if ! (rm -f "${host_mount_ro}" && cp -f /run/host"${host_mount_ro}" "${host_mount_ro}"); then
+					printf "Warning: Hard copy failed. Error: %s\n" "$(cp -f /run/host"${host_mount_ro}" "${host_mount_ro}" 2>&1)"
+				fi
+			fi
 		fi
+	done
+	###############################################################################
 
-		if [ ! -e "$(dirname "${dest_file}")" ]; then
-			if ! mkdir -p "$(dirname "${dest_file}")"; then
+	###############################################################################
+	printf "distrobox: Setting up read-write mounts...\n"
+
+	# On some ostree systems, home is in /var/home, but most of the software expects
+	# it to be in /home. In the hosts systems this is fixed by using a symlink.
+	# Do something similar here with a bind mount.
+	if [ -e "/var/home/${container_user_name}" ]; then
+		if ! mount_bind "/run/host/var/home/${container_user_name}" "/home/${container_user_name}"; then
+			printf "Warning: Cannot bind mount %s to /run/host%s\n" "/var/home" "/home"
+		fi
+	fi
+
+	for host_mount in ${HOST_MOUNTS}; do
+		if ! mount_bind /run/host"${host_mount}" "${host_mount}"; then
+			printf "Warning: Cannot bind mount %s to /run/host%s\n" "${host_mount}" "${host_mount}"
+		fi
+	done
+	###############################################################################
+
+	###############################################################################
+	printf "distrobox: Setting up host's sockets integration...\n"
+	# Find all the user's socket and mount them inside the container
+	# this will allow for continuity of functionality between host and container
+	#
+	# for example using `podman --remote` to control the host's podman from inside
+	# the container or accessing docker and libvirt sockets.
+	host_sockets="$(find /run/host/run \
+		-path /run/host/run/media -prune -o \
+		-path /run/host/run/timeshift -prune -o \
+		-name 'user' -prune -o \
+		-name 'bees' -prune -o \
+		-name 'nscd' -prune -o \
+		-name 'schroot' -prune -o \
+		-name 'system_bus_socket' -prune -o \
+		-name 'io.systemd.Multiplexer' -prune -o \
+		-name 'io.systemd.DropIn' -prune -o \
+		-name 'io.systemd.NameServiceSwitch' -prune -o \
+		-type s -print \
+		2> /dev/null || :)"
+
+	# we're excluding system dbus socket, nscd socket and systemd-userdbd sockets here. Including them will
+	# create many problems with package managers thinking they have access to
+	# system dbus, user auth cache misused or query wrong user information.
+	for host_socket in ${host_sockets}; do
+		container_socket="$(printf "%s" "${host_socket}" | sed 's|/run/host||g')"
+		# Check if the socket already exists or the symlink already exists
+		if [ ! -S "${container_socket}" ] && [ ! -L "${container_socket}" ]; then
+			# link it.
+			rm -f "${container_socket}"
+			mkdir -p "$(dirname "${container_socket}")"
+			if ! ln -s "${host_socket}" "${container_socket}"; then
+				printf "Warning: Cannot link socket %s to %s\n" "${host_socket}" "${container_socket}"
+			fi
+		fi
+	done
+	###############################################################################
+
+	# If --nvidia, we try to integrate host's nvidia drivers in to the guest
+	if [ "${nvidia}" -eq 1 ]; then
+		printf "distrobox: Setting up host's nvidia integration...\n"
+
+		# Refresh ldconfig cache, also detect if there are empty files remaining
+		# and clean them.
+		# This could happen when upgrading drivers and changing versions.
+		find /usr/lib* -empty -iname "*.so.*" -exec sh -c 'rm -rf "$1" || umount "$1" && rm -rf "$1"' sh {} ';' || :
+		find /usr/ /etc/ -empty -iname "*nvidia*" -exec sh -c 'rm -rf "$1" || umount "$1" && rm -rf "$1"' sh {} ';' || :
+
+		# First we find all generic config files we might need
+		NVIDIA_FILES="$(find /run/host/etc/ -not -type d \
+			-wholename "*nvidia*" || :)"
+		for nvidia_file in ${NVIDIA_FILES}; do
+			dest_file="$(printf "%s" "${nvidia_file}" | sed 's|/run/host||g')"
+
+			if [ ! -e "$(dirname "${dest_file}")" ]; then
+				if ! mkdir -p "$(dirname "${dest_file}")"; then
+					printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
+					continue
+				fi
+			fi
+			if [ ! -w "$(dirname "${dest_file}")" ]; then
 				printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
 				continue
 			fi
+
+			type="file"
+			if [ -L "${nvidia_file}" ]; then
+				type="link"
+			fi
+
+			if [ "${type}" = "link" ]; then
+				nvidia_file="$(readlink -fm "${nvidia_file}")"
+			fi
+			# Mounting read-only in a user namespace will trigger a check to see if certain
+			# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
+			locked_flags="$(get_locked_mount_flags "${nvidia_file}")"
+			mount_bind "${nvidia_file}" "${dest_file}" ro"${locked_flags:+,${locked_flags}}"
+		done
+
+		# Then we find all non-lib files we need, this includes
+		#       - egl files
+		#       - icd files
+		#       - doc files
+		#       - src files
+		NVIDIA_CONFS="$(find /run/host/usr/ -not -type d \
+			-wholename "*glvnd/egl_vendor.d/10_nvidia.json" \
+			-o -wholename "*X11/xorg.conf.d/10-nvidia.conf" \
+			-o -wholename "*X11/xorg.conf.d/nvidia-drm-outputclass.conf" \
+			-o -wholename "*egl/egl_external_platform.d/10_nvidia_wayland.json" \
+			-o -wholename "*egl/egl_external_platform.d/15_nvidia_gbm.json" \
+			-o -wholename "*nvidia/nvoptix.bin" \
+			-o -wholename "*vulkan/icd.d/nvidia_icd*.json" \
+			-o -wholename "*vulkan/icd.d/nvidia_layers.json" \
+			-o -wholename "*vulkan/implicit_layer.d/nvidia_layers.json" \
+			-o -wholename "*nvidia.icd" \
+			-o -wholename "*nvidia.yaml" \
+			-o -wholename "*nvidia.json" || :)"
+		for nvidia_file in ${NVIDIA_CONFS}; do
+			dest_file="$(printf "%s" "${nvidia_file}" | sed 's|/run/host||g')"
+
+			if [ ! -e "$(dirname "${dest_file}")" ]; then
+				if ! mkdir -p "$(dirname "${dest_file}")"; then
+					printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
+					continue
+				fi
+			fi
+			if [ ! -w "$(dirname "${dest_file}")" ]; then
+				printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
+				continue
+			fi
+			# Mounting read-only in a user namespace will trigger a check to see if certain
+			# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
+			locked_flags="$(get_locked_mount_flags "${nvidia_file}")"
+			mount_bind "${nvidia_file}" "${dest_file}" ro"${locked_flags:+,${locked_flags}}"
+		done
+
+		# Then we find all the CLI utilities
+		NVIDIA_BINARIES="$(find /run/host/bin/ /run/host/sbin/ /run/host/usr/bin/ /run/host/usr/sbin/ -not -type d \
+			-iname "*nvidia*" || :)"
+		for nvidia_file in ${NVIDIA_BINARIES}; do
+			dest_file="$(printf "%s" "${nvidia_file}" | sed 's|/run/host||g')"
+
+			if [ ! -e "$(dirname "${dest_file}")" ]; then
+				if ! mkdir -p "$(dirname "${dest_file}")"; then
+					printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
+					continue
+				fi
+			fi
+			if [ ! -w "$(dirname "${dest_file}")" ]; then
+				printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
+				continue
+			fi
+
+			type="file"
+			if [ -L "${nvidia_file}" ]; then
+				type="link"
+			fi
+
+			if [ "${type}" = "link" ]; then
+				nvidia_file="$(readlink -fm "${nvidia_file}")"
+			fi
+			# Mounting read-only in a user namespace will trigger a check to see if certain
+			# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
+			locked_flags="$(get_locked_mount_flags "${nvidia_file}")"
+			mount_bind "${nvidia_file}" "${dest_file}" ro"${locked_flags:+,${locked_flags}}"
+		done
+
+		# Find where the system expects libraries to be put
+		lib32_dir="/usr/lib/"
+		lib64_dir="/usr/lib/"
+		if [ -e "/usr/lib/x86_64-linux-gnu" ]; then
+			lib64_dir="/usr/lib/x86_64-linux-gnu/"
+			lib32_dir="/usr/lib/i386-linux-gnu/"
+		elif [ -e "/usr/lib64" ]; then
+			lib64_dir="/usr/lib64/"
 		fi
-		if [ ! -w "$(dirname "${dest_file}")" ]; then
-			printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
-			continue
+		if [ -e "/usr/lib32" ]; then
+			lib32_dir="/usr/lib32/"
 		fi
 
-		type="file"
-		if [ -L "${nvidia_lib}" ]; then
-			type="link"
-		fi
+		# Then we find all the ".so" libraries, these are searched separately
+		# because we need to extract the relative path to mount them in the
+		# correct path based on the guest's setup
+		#
+		# /usr/lib64 is common in Arch or RPM based distros, while /usr/lib/x86_64-linux-gnu is
+		# common on Debian derivatives, so we need to adapt between the two nomenclatures.
+		NVIDIA_LIBS="$(find /run/host/usr/lib*/ -not -type d \
+			-iname "*lib*nvidia*.so*" \
+			-o -iname "*nvidia*.so*" \
+			-o -iname "libcuda*.so*" \
+			-o -iname "libnvcuvid*" \
+			-o -iname "libnvoptix*" || :)"
+		for nvidia_lib in ${NVIDIA_LIBS}; do
+			dest_file="$(printf "%s" "${nvidia_lib}" |
+				sed "s|/run/host/usr/lib/x86_64-linux-gnu/|${lib64_dir}|g" |
+				sed "s|/run/host/usr/lib/i386-linux-gnu/|${lib32_dir}|g" |
+				sed "s|/run/host/usr/lib64/|${lib64_dir}|g" |
+				sed "s|/run/host/usr/lib32/|${lib32_dir}|g" |
+				sed "s|/run/host/usr/lib/|${lib32_dir}|g")"
 
-		if [ "${type}" = "link" ]; then
-			nvidia_lib="$(readlink -fm "${nvidia_lib}")"
-		fi
+			# If file exists, just continue
+			# this may happen for directories like /usr/lib/nvidia/xorg/foo.so
+			# where the directory is already bind mounted (ro) and we don't need
+			# to mount further files in it.
+			if [ -e "${dest_file}" ]; then
+				continue
+			fi
 
-		# Mounting read-only in a user namespace will trigger a check to see if certain
-		# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
-		locked_flags="$(get_locked_mount_flags "${nvidia_lib}")"
-		mount_bind "${nvidia_lib}" "${dest_file}" ro"${locked_flags:+,${locked_flags}}"
-	done
+			if [ ! -e "$(dirname "${dest_file}")" ]; then
+				if ! mkdir -p "$(dirname "${dest_file}")"; then
+					printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
+					continue
+				fi
+			fi
+			if [ ! -w "$(dirname "${dest_file}")" ]; then
+				printf "Warning: skpping file %s, %s mounted as read-only\n" "${dest_file}" "$(dirname "${dest_file}")"
+				continue
+			fi
 
-	# Refresh ldconfig cache
-	ldconfig 2>&1 /dev/null
+			type="file"
+			if [ -L "${nvidia_lib}" ]; then
+				type="link"
+			fi
 
+			if [ "${type}" = "link" ]; then
+				nvidia_lib="$(readlink -fm "${nvidia_lib}")"
+			fi
+
+			# Mounting read-only in a user namespace will trigger a check to see if certain
+			# "locked" flags (line noexec,nodev,nosuid) are changed. This ensures we explicitly reuse those flags.
+			locked_flags="$(get_locked_mount_flags "${nvidia_lib}")"
+			mount_bind "${nvidia_lib}" "${dest_file}" ro"${locked_flags:+,${locked_flags}}"
+		done
+
+		# Refresh ldconfig cache
+		ldconfig 2>&1 /dev/null
+
+	fi
 fi
 
 ###############################################################################
 printf "distrobox: Integrating host's themes, icons, fonts...\n"
-# Themes and icons integration works using a bind mount inside the container
-# of the host's themes and icons directory. This ensures that the host's home will
-# not be littered with files and directories and broken symlinks.
-if ! mount_bind "/run/host/usr/share/themes" "/usr/local/share/themes"; then
-	printf "Warning: Cannot bind mount /run/host/usr/share/themes to /usr/local/share/themes\n"
-	printf "Warning: Themes integration with the host is disabled.\n"
-fi
-if ! mount_bind "/run/host/usr/share/icons" "/usr/local/share/icons"; then
-	printf "Warning: Cannot bind mount /run/host/usr/share/icons to /usr/local/share/icons\n"
-	printf "Warning: Icons integration with the host is disabled.\n"
-fi
-if ! mount_bind "/run/host/usr/share/fonts" "/usr/local/share/fonts"; then
-	printf "Warning: Cannot bind mount /run/host/usr/share/fonts to /usr/local/share/fonts\n"
-	printf "Warning: Fonts integration with the host is disabled.\n"
+if [ "${isolated}" -eq 0 ]; then
+	# Themes and icons integration works using a bind mount inside the container
+	# of the host's themes and icons directory. This ensures that the host's home will
+	# not be littered with files and directories and broken symlinks.
+	if ! mount_bind "/run/host/usr/share/themes" "/usr/local/share/themes"; then
+		printf "Warning: Cannot bind mount /run/host/usr/share/themes to /usr/local/share/themes\n"
+		printf "Warning: Themes integration with the host is disabled.\n"
+	fi
+	if ! mount_bind "/run/host/usr/share/icons" "/usr/local/share/icons"; then
+		printf "Warning: Cannot bind mount /run/host/usr/share/icons to /usr/local/share/icons\n"
+		printf "Warning: Icons integration with the host is disabled.\n"
+	fi
+	if ! mount_bind "/run/host/usr/share/fonts" "/usr/local/share/fonts"; then
+		printf "Warning: Cannot bind mount /run/host/usr/share/fonts to /usr/local/share/fonts\n"
+		printf "Warning: Fonts integration with the host is disabled.\n"
+	fi
+else
+	if mkdir -p "/usr/local/share"; then
+		if [ ! -L "/usr/local/share/themes" ]; then
+			if ! ln -s "/run/host/usr/local/share/themes" "/usr/local/share/themes"; then
+				printf "Warning: Cannot create link /run/host/usr/share/themes to /usr/local/share/themes\n"
+				printf "Warning: Themes integration with the host is disabled.\n"
+			fi
+		fi
+		if [ ! -L "/usr/local/share/icons" ]; then
+			if ! ln -s "/run/host/usr/share/icons" "/usr/local/share/icons"; then
+				printf "Warning: Cannot create link /run/host/usr/share/icons to /usr/local/share/icons\n"
+				printf "Warning: Icons integration with the host is disabled.\n"
+			fi
+		fi
+		if [ ! -L "/usr/local/share/fonts" ]; then
+			if ! ln -s "/run/host/usr/share/fonts" "/usr/local/share/fonts"; then
+				printf "Warning: Cannot create link /run/host/usr/share/fonts to /usr/local/share/fonts\n"
+				printf "Warning: Fonts integration with the host is disabled.\n"
+			fi
+		fi
+	fi
 fi
 ###############################################################################
 
@@ -2640,7 +2665,7 @@ fi
 # up, running and in sync with host.
 #
 # For non-init containers, the init will stop here
-if [ "${init}" -eq 0 ]; then
+if [ "${init}" -eq 0 ] && [ "${isolated}" -eq 0 ]; then
 	printf "container_setup_done\n"
 	# Keepalive loop
 	# disable verbose logging for this phase.
@@ -2694,9 +2719,11 @@ printf "distrobox: Setting up init system...\n"
 # some of this directories are needed by
 # the init system. If they're mounts, there might
 # be problems. Let's unmount them.
-for host_mount in ${HOST_MOUNTS_RO_INIT}; do
-	if findmnt "${host_mount}" > /dev/null; then umount "${host_mount}"; fi
-done
+if [ "${isolated}" -eq 0 ]; then
+	for host_mount in ${HOST_MOUNTS_RO_INIT}; do
+		if findmnt "${host_mount}" > /dev/null; then umount "${host_mount}"; fi
+	done
+fi
 
 # Remove symlinks
 rm -f /run/systemd/coredump
@@ -2724,7 +2751,7 @@ sleep 0.5
 
 # Mount the created pty over /dev/console in order to have systemd logs
 # right into container logs
-if ! mount --bind /dev/pts/0 /dev/console; then
+if [ "${isolated}" -eq 0 ] && ! mount --bind /dev/pts/0 /dev/console; then
 	# Fallback to older behaviour or fake plaintext file in case it fails
 	# this ensures rootful + initful boxes do not interfere with host's /dev/console
 	rm -f /var/console
@@ -2732,7 +2759,7 @@ if ! mount --bind /dev/pts/0 /dev/console; then
 	mount --bind /var/console /dev/console
 fi
 
-if [ -e /etc/inittab ]; then
+if [ "${isolated}" -eq 0 ] && [ -e /etc/inittab ]; then
 	# Cleanup openrc to not interfere with the host
 	sed -i 's/^\(tty\d\:\:\)/#\1/g' /etc/inittab
 fi
@@ -2789,6 +2816,22 @@ if command -v systemctl 2> /dev/null; then
 	for unit in $(find ${UNIT_TARGETS} 2> /dev/null); do
 		systemctl mask "$(basename "${unit}")" || :
 	done
+
+	# Machine-id initialization in isolated container
+	if [ "${isolated}" -ne 0 ]; then
+		if [ ! -e "/etc/machine-id" ] || [ "x$(cat /etc/machine-id)" = "xuninitialized" ]; then
+			rm -f /etc/machine-id /var/lib/dbus/machine-id
+
+			if command -v dbus-uuidgen > /dev/null; then
+				dbus-uuidgen --ensure=/etc/machine-id
+			else
+				uuidgen -r | tr -d '-' > /etc/machine-id
+			fi
+
+			mkdir -p /var/lib/dbus
+			ln -s /etc/machine-id /var/lib/dbus/machine-id
+		fi
+	fi
 fi
 
 # Let's do a minimal user-integration for the user when using system
