@@ -83,6 +83,7 @@ isolated=0
 non_interactive=0
 nvidia=0
 nopasswd=0
+particular_devices=0
 unshare_ipc=0
 unshare_groups=0
 unshare_netns=0
@@ -232,6 +233,8 @@ Options:
 	--unshare-all:          activate all the unshare flags below
 	--compatibility/-C:	show list of compatible images
 	--isolated:		try to create isolated sandbox instead of host integration
+	--pass-some-devices:		pass some devices into container, like Flatpak's --device=all flag. Without --isolated option
+				this option has no effect
 	--help/-h:		show this message
 	--no-entry:		do not generate a container entry in the application list
 	--dry-run/-d:		only print the container manager command generated
@@ -449,6 +452,11 @@ while :; do
 			shift
 			isolated=1
 			unshare_process=1
+			unshare_devsys=1
+			;;
+		--pass-some-devices)
+			shift
+			particular_devices=1
 			;;
 		--) # End of all options.
 			shift
@@ -779,6 +787,12 @@ generate_create_command()
 
 		result_command="${result_command}
 			--volume /tmp:/tmp:rslave"
+
+		if [ "${unshare_devsys}" -eq 0 ]; then
+			result_command="${result_command}
+				--volume /dev:/dev:rslave
+				--volume /sys:/sys:rslave"
+		fi
 	else
 		if [ -f "/etc/locale.conf" ]; then
 			result_command="${result_command}
@@ -799,12 +813,50 @@ generate_create_command()
 
 		result_command="${result_command}
 			--volume \"${container_user_home}/.local/share/applications\":\"/run/host${container_user_home}/.local/share/applications\":rslave"
-	fi
 
-	if [ "${unshare_devsys}" -eq 0 ]; then
-		result_command="${result_command}
-			--volume /dev:/dev:rslave
-			--volume /sys:/sys:rslave"
+		if [ "${particular_devices}" -ne 0 ]; then
+			if [ -d "/dev/bus/usb" ]; then
+				result_command="${result_command}
+					--volume \"/dev/bus/usb\":\"/dev/bus/usb\":rslave"
+			fi
+		
+			DRI_DEVICES="
+				/dev/dri
+				/dev/udmabuf
+				/dev/mali
+				/dev/mali0
+				/dev/umplock
+				/dev/nvidiactl
+				/dev/nvidia-modeset
+				/dev/nvidia-uvm
+				/dev/nvidia-uvm-tools
+			"
+
+			for resource in ${DRI_DEVICES}; do
+				if [ -e "${resource}" ]; then
+					propagation=""
+					if [ -d "${resource}" ]; then
+						propagation=":rslave"
+					fi
+
+					result_command="${result_command}
+							--volume \"${resource}\":\"${resource}\"${propagation}"
+				fi
+			done
+
+			for i in $(seq 0 19); do
+				nvidia_device="/dev/nvidia${i}"
+				if [ -e "${nvidia_device}" ]; then
+					result_command="${result_command}
+						--volume \"${nvidia_device}\":\"${nvidia_device}\""
+				fi
+			done
+
+			if [ -d "/dev/input" ]; then
+				result_command="${result_command}
+					--volume \"/dev/input\":\"/dev/input\":rslave"
+			fi
+		fi
 	fi
 
 	# In case of initful containers, we implement a series of mountpoint in order
