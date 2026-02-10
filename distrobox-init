@@ -2186,7 +2186,7 @@ if [ "${isolated}" -eq 0 ]; then
 else
 	if mkdir -p "/usr/local/share"; then
 		if [ ! -L "/usr/local/share/themes" ]; then
-			if ! ln -s "/run/host/usr/local/share/themes" "/usr/local/share/themes"; then
+			if ! ln -s "/run/host/usr/share/themes" "/usr/local/share/themes"; then
 				printf "Warning: Cannot create link /run/host/usr/share/themes to /usr/local/share/themes\n"
 				printf "Warning: Themes integration with the host is disabled.\n"
 			fi
