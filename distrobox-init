@@ -1343,14 +1343,11 @@ setup_pacman()
 		locale-gen -a
 	fi
 
-	if  ! localedef --list-archive | grep -qi "$(echo "${HOST_LOCALE}" | tr -d '-')"; then
+	if  [ "${HOST_LOCALE}" != "en_US.UTF-8" ] && ! localedef --list-archive | grep -qi "$(echo "${HOST_LOCALE}" | tr -d '-')"; then
 		sed -i "s|#.*${HOST_LOCALE}|${HOST_LOCALE}|g" /etc/locale.gen
 		locale-gen -a
 
-		sed -i -e 's/\(\[ -z "$LANG" \]\)/\1 || [ "$LANG" = "C.UTF-8" ]/' /etc/profile.d/locale.sh
-		. /etc/profile.d/locale.sh
-
-		# Reinstall all packages to restore locale
+		# Reinstall all packages to restore localizations
 		pacman -Qqn | pacman -S --noconfirm -
 	fi
 
@@ -2204,6 +2201,10 @@ test -z "\$USER" && export USER="\$(id -un 2> /dev/null)"
 test -z "\$UID"  && readonly UID="\$(id -ur 2> /dev/null)"
 test -z "\$EUID" && readonly EUID="\$(id -u  2> /dev/null)"
 export SHELL="\$(getent passwd "\${USER}" | cut -f 7 -d :)"
+
+if [ "${LANG}" = "C.UTF-8" ] && [ -r "/etc/profile.d/locale.sh" ]; then
+	LANG=
+fi
 
 test -z "\${XDG_RUNTIME_DIR:-}" && export XDG_RUNTIME_DIR="/run/user/\$(id -ru)"
 test -z "\${DBUS_SESSION_BUS_ADDRESS:-}" && export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/\$(id -ru)/bus"
