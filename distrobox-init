@@ -1384,7 +1384,7 @@ setup_pacman()
 	# shellcheck disable=SC2086,2046
 	pacman -S --needed --noconfirm $(pacman -Ssq | grep -E "^($(echo ${deps} | tr ' ' '|'))$")
 
-	if [ ! -e "/usr/share/i18n/locales${HOST_LOCALE}" ]; then
+	if [ ! -e "/usr/share/i18n/locales/${HOST_LOCALE}" ]; then
 		pacman -S --noconfirm glibc glibc-locales
 	fi
 
@@ -1395,9 +1395,11 @@ setup_pacman()
 		pacman -S --noconfirm tzdata
 	fi
 
+	echo "LANG=${HOST_LOCALE}" > /etc/locale.conf
+
 	# In case the locale is not available, install it
 	# will ensure we don't fallback to C.UTF-8
-	if ! locale -a | grep -qi en_us.utf8 || ! locale -a | grep -qi "$(echo "${HOST_LOCALE}" | tr -d '-')"; then
+	if ! localedef --list-archive | grep -qi en_us.utf8 || ! localedef --list-archive | grep -qi "$(echo "${HOST_LOCALE}" | tr -d '-')"; then
 		sed -i "s|#.*en_US.UTF-8|en_US.UTF-8|g" /etc/locale.gen
 		sed -i "s|#.*${HOST_LOCALE}|${HOST_LOCALE}|g" /etc/locale.gen
 		locale-gen -a
