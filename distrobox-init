@@ -1330,6 +1330,30 @@ setup_pacman()
 	sed -i "s|NoExtract.*||g" /etc/pacman.conf
 	sed -i "s|NoProgressBar.*||g" /etc/pacman.conf
 
+	if [ ! -e "/usr/share/i18n/locales/${HOST_LOCALE}" ]; then
+		pacman -S --noconfirm glibc glibc-locales
+	fi
+
+	echo "LANG=${HOST_LOCALE}" > /etc/locale.conf
+
+	# In case the locale is not available, install it
+	# will ensure we don't fallback to C.UTF-8
+	if ! localedef --list-archive | grep -qi en_us.utf8; then
+		sed -i "s|#.*en_US.UTF-8|en_US.UTF-8|g" /etc/locale.gen
+		locale-gen -a
+	fi
+
+	if  ! localedef --list-archive | grep -qi "$(echo "${HOST_LOCALE}" | tr -d '-')"; then
+		sed -i "s|#.*${HOST_LOCALE}|${HOST_LOCALE}|g" /etc/locale.gen
+		locale-gen -a
+
+		sed -i -e 's/\(\[ -z "$LANG" \]\)/\1 || [ "$LANG" = "C.UTF-8" ]/' /etc/profile.d/locale.sh
+		. /etc/profile.d/locale.sh
+
+		# Reinstall all packages to restore locale
+		pacman -Qqn | pacman -S --noconfirm -
+	fi
+
 	pacman -S -u --noconfirm
 	# Check if shell_pkg is available in distro's repo. If not we
 	# fall back to bash, and we set the SHELL variable to bash so
@@ -1384,25 +1408,11 @@ setup_pacman()
 	# shellcheck disable=SC2086,2046
 	pacman -S --needed --noconfirm $(pacman -Ssq | grep -E "^($(echo ${deps} | tr ' ' '|'))$")
 
-	if [ ! -e "/usr/share/i18n/locales/${HOST_LOCALE}" ]; then
-		pacman -S --noconfirm glibc glibc-locales
-	fi
-
 	# Ensure we have tzdata installed and populated, sometimes container
 	# images blank the zoneinfo directory, so we reinstall the package to
 	# ensure population
 	if [ ! -e /usr/share/zoneinfo/UTC ]; then
 		pacman -S --noconfirm tzdata
-	fi
-
-	echo "LANG=${HOST_LOCALE}" > /etc/locale.conf
-
-	# In case the locale is not available, install it
-	# will ensure we don't fallback to C.UTF-8
-	if ! localedef --list-archive | grep -qi en_us.utf8 || ! localedef --list-archive | grep -qi "$(echo "${HOST_LOCALE}" | tr -d '-')"; then
-		sed -i "s|#.*en_US.UTF-8|en_US.UTF-8|g" /etc/locale.gen
-		sed -i "s|#.*${HOST_LOCALE}|${HOST_LOCALE}|g" /etc/locale.gen
-		locale-gen -a
 	fi
 
 	# Install additional packages passed at distrbox-create time
