@@ -860,6 +860,11 @@ generate_create_command()
 				result_command="${result_command}
 					--volume \"/dev/input\":\"/dev/input\":rslave"
 			fi
+
+			if [ -c "/dev/uinput" ]; then
+				result_command="${result_command}
+					--volume \"/dev/uinput\":\"/dev/uinput\""
+			fi
 		fi
 	fi
 
