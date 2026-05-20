@@ -831,7 +831,7 @@ generate_create_command()
 			--volume /usr/share/terminfo:/run/host/usr/share/terminfo${rslave}"
 		
 		result_command="${result_command}
-			--mount type=tmpfs,destination=/tmp,noswap"
+			--mount type=tmpfs,destination=/tmp"
 
 		if [ "${particular_devices}" -ne 0 ]; then
 			if [ -d "/dev/bus/usb" ]; then
