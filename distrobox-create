@@ -815,9 +815,6 @@ generate_create_command()
 		result_command="${result_command}
 			--mount type=tmpfs,destination=/tmp"
 
-		result_command="${result_command}
-			--volume \"${container_user_home}/.local/share/applications\":\"/run/host${container_user_home}/.local/share/applications\":rslave"
-
 		if [ "${particular_devices}" -ne 0 ]; then
 			if [ -d "/dev/bus/usb" ]; then
 				result_command="${result_command}
