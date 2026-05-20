@@ -106,6 +106,8 @@ graphical apps (X11/Wayland), and audio.
   - [Pre-installing additional package repositories](useful_tips.md#pre-installing-additional-package-repositories)
   - [Apply resource limitation on the fly](useful_tips.md#apply-resource-limitation-on-the-fly)
 - [Posts](posts/posts.md)
+  - [Announcing the next generation of Distrobox](posts/announcing_distrobox_next.md)
+  - [Distrobox Next architecture](posts/distrobox_next_architecture.md)
   - [Create a dedicated distrobox container](posts/distrobox_custom.md)
   - [Execute a command on the Host](posts/execute_commands_on_host.md)
   - [Install Podman in HOME](posts/install_podman_static.md)
@@ -113,7 +115,7 @@ graphical apps (X11/Wayland), and audio.
   - [Install on Steamdeck](posts/steamdeck_guide.md)
   - [Integrate VSCode and Distrobox](posts/integrate_vscode_distrobox.md)
   - [Run Libvirt using distrobox](posts/run_libvirt_in_distrobox.md)
-  - [Run latest GNOME and KDE Plasma using distrobox](posts/run_latest_gnome_kde_on_distrobox.md)
+  - [Run latest GNOME and KDE Plasma using distrobox](posts/run_latest_gnome_kde_hyprland_on_distrobox.md)
 - [Featured Articles](featured_articles.md)
   - [Articles](featured_articles.md#articles)
     - [Run Distrobox on Fedora Linux - Fedora Magazine](https://fedoramagazine.org/run-distrobox-on-fedora-linux/)
@@ -246,7 +248,10 @@ Rootless `docker` is still not working as intended and will be included in the f
 when it will be complete.
 
 That said, it is useful to read the discussion about decoupling with the host,
-available here: [#28 Sandboxed mode](https://github.com/89luca89/distrobox/issues/28)
+available here: [#28 Sandboxed mode](https://github.com/89luca89/distrobox/issues/28).
+
+If you are looking for something similar to Distrobox but with sandboxing capabilities,
+there are other options to consider which do prioritise isolation such as [Litterbox](https://github.com/Gerharddc/litterbox).
 
 ---
 
@@ -346,7 +351,7 @@ Alternatively, it is possible to specify preferences using ENV variables:
 Distrobox is packaged in the following distributions, if your distribution is
 on this list, you can refer to your repos for installation:
 
-[![Packaging status](https://repology.org/badge/vertical-allrepos/distrobox.svg)](https://repology.org/project/distrobox/versions)
+[![Packaging status](https://repology.org/badge/vertical-allrepos/distrobox.svg?columns=5)](https://repology.org/project/distrobox/versions)
 
 Thanks to the maintainers for their work: [M0Rf30](https://github.com/M0Rf30),
 [alcir](https://github.com/alcir), [dfaggioli](https://github.com/dfaggioli),
