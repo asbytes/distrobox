@@ -2858,7 +2858,6 @@ if command -v systemctl 2> /dev/null; then
 		/usr/lib/systemd/system/getty@.service
 		/usr/lib/systemd/system/systemd-machine-id-commit.service
 		/usr/lib/systemd/system/systemd-binfmt.service
-		/usr/lib/systemd/system/systemd-tmpfiles*
 		/usr/lib/systemd/system/systemd-udevd.service
 		/usr/lib/systemd/system/systemd-udev-trigger.service
 		/usr/lib/systemd/system/systemd-update-utmp*
@@ -2869,6 +2868,11 @@ if command -v systemctl 2> /dev/null; then
 		/usr/lib/systemd/system/hybrid-sleep.target
 		/usr/lib/systemd/system/systemd-remount-fs.service
 	"
+	if [ "${isolated}" -eq 0 ]; then
+		UNIT_TARGETS="${UNIT_TARGETS}
+			/usr/lib/systemd/system/systemd-tmpfiles*
+		"
+	fi
 
 	# in case /etc/resolv.conf is a mount, we need to mask resolved
 	# in this case we're using network=host and systemd-resolved won't
