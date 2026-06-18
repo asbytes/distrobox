@@ -1316,6 +1316,9 @@ setup_microdnf()
 #   None
 setup_pacman()
 {
+	pacman-key --init
+	pacman-key --populate
+
 	# Update the package repository cache exactly once before installing packages.
 	pacman -S -y -y
 
