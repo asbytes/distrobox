@@ -1026,8 +1026,6 @@ generate_create_command()
 
 			SHARED_RESOURCES="
 				wayland-*
-				pipewire-?
-				pipewire-?.lock
 				pulse
 			"
 
