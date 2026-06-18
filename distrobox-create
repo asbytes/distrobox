@@ -897,6 +897,11 @@ generate_create_command()
 				result_command="${result_command}
 					--volume \"/dev/uinput\":\"/dev/uinput\""
 			fi
+
+			if [ -d "/dev/snd" ]; then
+				result_command="${result_command}
+					--volume \"/dev/snd\":\"/dev/snd\"${rslave}"
+			fi
 		fi
 	fi
 
