@@ -588,6 +588,23 @@ generate_enter_command()
 	printf "%s\n" "${result_command}" | tr -d '\t'
 }
 
+create_wayland_socket() {
+	if command -v way-secure > /dev/null 2>&1; then
+		mkdir -p ${XDG_RUNTIME_DIR}/.distrobox/wl
+		service_name="wayland-distrobox-${container_name}"
+		socket_path="${XDG_RUNTIME_DIR}/.distrobox/wl/wayland-${container_name}"
+
+		if [ "$(systemctl --user is-active ${service_name})" != "active" ]; then
+			rm -f ${socket_path}
+			systemd-run --quiet --user --unit ${service_name} -- way-secure -e distrobox -a ${container_name} --socket-path ${socket_path}
+
+			while [ ! -S ${socket_path} ]; do
+				sleep 0.1
+			done
+		fi
+	fi
+}
+
 container_home="${HOME}"
 container_path="${PATH}"
 unshare_groups=0
@@ -715,6 +732,10 @@ fi
 
 # If the container is not already running, we need to start if first
 if [ "${container_status}" != "running" ]; then
+	if [ "${isolated}" -ne 0 ]; then
+		create_wayland_socket
+	fi
+
 	# If container is not running, start it first
 	#
 	# Here, we save the timestamp before launching the start command, so we can

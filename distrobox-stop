@@ -140,6 +140,16 @@ Options:
 EOF
 }
 
+stop_wayland_socket() {
+	service_name="wayland-distrobox-$1"
+	socket_path="${XDG_RUNTIME_DIR}/.distrobox/wl/wayland-$1"
+
+	if [ "$(systemctl --user is-active ${service_name})" = "active" ]; then
+		systemctl --quiet --user stop ${service_name}
+		rm -f ${socket_path}
+	fi
+}
+
 # Parse arguments
 while :; do
 	case $1 in
@@ -291,6 +301,8 @@ case "${response}" in
 		# Stop the container
 		for container_name in ${container_name_list}; do
 			${container_manager} stop "${container_name}"
+
+			stop_wayland_socket "${container_name}"
 		done
 		;;
 	n | N | No | no | NO)
