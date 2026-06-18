@@ -1037,7 +1037,7 @@ generate_create_command()
 					fi
 
 					result_command="${result_command}
-							--volume \"${resource}\":\"${run_prefix}/run/user/${container_user_uid}/$(basename ${resource})\":${propagation}"
+							--volume \"${resource}\":\"${run_prefix}/run/user/${container_user_uid}/$(basename ${resource})\"${propagation}"
 				done
 			done
 		fi
