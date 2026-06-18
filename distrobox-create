@@ -73,6 +73,7 @@ container_name_default="my-distrobox"
 container_hostname=""
 container_pre_init_hook=""
 container_user_custom_home=""
+container_user_custom_name=""
 container_user_gid="$(id -rg)"
 container_user_home="${HOME:-"/"}"
 container_user_name="${USER}"
@@ -215,6 +216,7 @@ Options:
 	--home/-H:		select a custom HOME directory for the container. Useful to avoid host's home littering with temp files.
 				Mount point inside container depends on --isolated option. When isolated, custom home volume is mounted at same point
 				as host, else it is mounted as is.
+	--user/-U:		Use specified user name inside container instead of current user	default: ${USER}
 	--volume:		additional volumes to add to the container
 	--additional-flags/-a:	additional flags to pass to the container manager command
 	--additional-packages/-ap:	additional packages to install during initial container setup
@@ -407,6 +409,13 @@ while :; do
 			if [ -n "$2" ]; then
 				# Remove trailing slashes
 				container_user_custom_home="$(echo "$2" | sed 's:/*$::')"
+				shift
+				shift
+			fi
+			;;
+		-U | --user)
+			if [ -n "$2" ]; then
+				container_user_custom_name="$2"
 				shift
 				shift
 			fi
@@ -761,7 +770,10 @@ generate_create_command()
 		home_volume="\"${container_user_home}\":\"${container_user_home}\""
 	else
 		container_home="${container_user_home}"
-		home_volume="\"${container_user_custom_home:-"${container_user_home}"}\":\"${container_user_home}\""
+		if [ -n "${container_user_custom_name}" ]; then
+			container_home="$(echo ${container_home} | sed "s/${container_user_name}/${container_user_custom_name}/")"
+		fi
+		home_volume="\"${container_user_custom_home:-"${container_user_home}"}\":\"${container_home}\""
 	fi
 
 	# Mount useful stuff inside the container.
@@ -779,7 +791,7 @@ generate_create_command()
 		--label \"distrobox.unshare_groups=${unshare_groups}\"
 		--label \"distrobox.isolated=${isolated}\"
 		--env \"SHELL=$(basename "${SHELL:-"/bin/bash"}")\"
-		--env \"HOME=${container_user_home}\"
+		--env \"HOME=${container_home}\"
 		--env \"container=${container_manager}\"
 		--env \"TERMINFO_DIRS=/usr/share/terminfo:/run/host/usr/share/terminfo\"
 		--env \"CONTAINER_ID=${container_name}\"
@@ -1152,7 +1164,7 @@ generate_create_command()
 	--entrypoint /usr/bin/entrypoint
 	${container_image}
 		--verbose
-		--name \"${container_user_name}\"
+		--name \"${container_user_custom_name:-container_user_name}\"
 		--user ${container_user_uid}
 		--group ${container_user_gid}
 		--home \"${container_home}\"

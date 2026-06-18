@@ -431,8 +431,11 @@ generate_enter_command()
 		--env=PWD=${workdir}"
 	result_command="${result_command}
 		--env=CONTAINER_ID=${container_name}"
-	result_command="${result_command}
-		--env=DISTROBOX_ENTER_PATH=${distrobox_enter_path}"
+
+	if [ "${isolated}" -eq 0 ]; then
+		result_command="${result_command}
+			--env=DISTROBOX_ENTER_PATH=${distrobox_enter_path}"
+	fi
 
 	# Loop through all the environment vars
 	# and export them to the container.
@@ -461,6 +464,7 @@ generate_enter_command()
 	standard_paths="/usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin"
 
 	if [ "${clean_path}" -eq 1 ]; then
+		container_paths=""
 		# only add the standard paths
 		for standard_path in ${standard_paths}; do
 			if [ -z "${container_paths}" ]; then
@@ -531,6 +535,9 @@ generate_enter_command()
 	# Ensure the standard FHS program paths are in XDG_DATA_DIRS environment
 	standard_paths="/usr/local/share /usr/share"
 	container_paths="${XDG_DATA_DIRS:-}"
+	if [ "${clean_path}" -eq 1 ]; then
+		container_paths=""
+	fi
 	# add to the XDG_DATA_DIRS only after the host's paths, and only if not already present.
 	for standard_path in ${standard_paths}; do
 		pattern="(:|^)${standard_path}(:|$)"
@@ -555,6 +562,9 @@ generate_enter_command()
 	# Ensure the standard FHS program paths are in XDG_CONFIG_DIRS environment
 	standard_paths="/etc/xdg"
 	container_paths="${XDG_CONFIG_DIRS:-}"
+	if [ "${clean_path}" -eq 1 ]; then
+		container_paths=""
+	fi
 	# add to the XDG_CONFIG_DIRS only after the host's paths, and only if not already present.
 	for standard_path in ${standard_paths}; do
 		pattern="(:|^)${standard_path}(:|$)"
@@ -610,14 +620,20 @@ container_path="${PATH}"
 unshare_groups=0
 isolated=0
 
-# Read the unshare_groups label early so the positional-parameter
-# manipulation below picks the correct branch. The full inspect
-# happens later, but this single value is needed before then.
-unshare_groups="$(${container_manager} inspect --type container \
-	--format '{{ index .Config.Labels "distrobox.unshare_groups" }}' \
-	"${container_name}" 2> /dev/null || echo 0)"
-[ -z "${unshare_groups}" ] && unshare_groups=0
+eval "$(${container_manager} inspect --type container --format \
+	'unshare_groups={{ index .Config.Labels "distrobox.unshare_groups" }};
+	isolated={{ index .Config.Labels "distrobox.isolated" }};
+	{{range .Config.Env}}{{if and (ge (len .) 5) (eq (slice . 0 5) "HOME=")}}container_home={{slice . 5 | printf "%q"}}{{end}}{{end}};
+	{{range .Config.Env}}{{if and (ge (len .) 5) (eq (slice . 0 5) "PATH=")}}container_path={{slice . 5 | printf "%q"}}{{end}}{{end}};
+	container_command_user={{$name_idx:=0}}{{ range $idx, $_value := .Config.Cmd }}{{if (eq . "--name")}}{{$name_idx = $idx }}{{break}}{{end}}{{end}}{{index .Config.Cmd (len (printf "a%*s" $name_idx "")) }}' \
+	"${container_name}")"
 
+[ -z "${unshare_groups}" ] && unshare_groups=0
+[ -z "${isolated}" ] && isolated=0
+
+if [ "${isolated}" -ne 0 ]; then
+	clean_path=1
+fi
 ################################################################################
 # In this section we will manipulate the positional parameters
 # in order to generate our long docker/podman/lilipod command to execute.
@@ -679,14 +695,9 @@ if [ "${dryrun}" -ne 0 ]; then
 fi
 
 # Now inspect the container we're working with.
-container_status="unknown"
-eval "$(${container_manager} inspect --type container --format \
-	'container_status={{.State.Status}};
-	unshare_groups={{ index .Config.Labels "distrobox.unshare_groups" }};
-	isolated={{ index .Config.Labels "distrobox.isolated" }};
-	{{range .Config.Env}}{{if and (ge (len .) 5) (eq (slice . 0 5) "HOME=")}}container_home={{slice . 5 | printf "%q"}}{{end}}{{end}};
-	{{range .Config.Env}}{{if and (ge (len .) 5) (eq (slice . 0 5) "PATH=")}}container_path={{slice . 5 | printf "%q"}}{{end}}{{end}}' \
-	"${container_name}")"
+container_status="$(${container_manager} inspect --type container \
+	--format '{{.State.Status}}' \
+	"${container_name}" 2> /dev/null || echo 'unknown')"
 
 # Check if the container is even there
 if [ "${container_status}" = "unknown" ]; then
