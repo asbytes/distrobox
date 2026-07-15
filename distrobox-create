@@ -1164,7 +1164,7 @@ generate_create_command()
 	--entrypoint /usr/bin/entrypoint
 	${container_image}
 		--verbose
-		--name \"${container_user_custom_name:-container_user_name}\"
+		--name \"${container_user_custom_name:-$container_user_name}\"
 		--user ${container_user_uid}
 		--group ${container_user_gid}
 		--home \"${container_home}\"
