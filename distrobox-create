@@ -81,6 +81,7 @@ container_user_uid="$(id -ru)"
 dryrun=0
 init=0
 isolated=0
+no_bind_home=0
 non_interactive=0
 nvidia=0
 nopasswd=0
@@ -216,6 +217,7 @@ Options:
 	--home/-H:		select a custom HOME directory for the container. Useful to avoid host's home littering with temp files.
 				Mount point inside container depends on --isolated option. When isolated, custom home volume is mounted at same point
 				as host, else it is mounted as is.
+	--no-home/-M:	do not bind user home into container.
 	--user/-U:		Use specified user name inside container instead of current user	default: ${USER}
 	--volume:		additional volumes to add to the container
 	--additional-flags/-a:	additional flags to pass to the container manager command
@@ -413,6 +415,10 @@ while :; do
 				shift
 			fi
 			;;
+		-M | --no-home)
+				no_bind_home=1
+				shift
+			;;
 		-U | --user)
 			if [ -n "$2" ]; then
 				container_user_custom_name="$2"
@@ -511,6 +517,18 @@ set -o nounset
 # set verbosity
 if [ "${verbose}" -ne 0 ]; then
 	set -o xtrace
+fi
+
+# Exit on mutually exclusive options
+if [ "${no_bind_home}" -ne 0 ]; then
+	if [ "${isolated}" -ne 0 ] && [ -n "${container_user_custom_home}" ]; then
+		printf >&2 "ERROR: -H/--home and -M/--no-home options are mutually exclusive.\n"
+		exit 1
+	fi
+
+	if [ "${isolated}" -eq 0 ]; then
+		printf >&2 "WARNING: -M/--no-home has no effect when distrobox is not isolated.\n"
+	fi
 fi
 
 # If no clone option and no container image, let's choose a default image to use.
@@ -766,7 +784,7 @@ generate_create_command()
 	fi
 
 	if [ $isolated -eq 0 ]; then
-		container_home="${container_user_custom_home:-"${container_user_home}"}"
+		container_home="${container_user_home}"
 		home_volume="\"${container_user_home}\":\"${container_user_home}\""
 	else
 		container_home="${container_user_home}"
@@ -795,8 +813,14 @@ generate_create_command()
 		--env \"container=${container_manager}\"
 		--env \"TERMINFO_DIRS=/usr/share/terminfo:/run/host/usr/share/terminfo\"
 		--env \"CONTAINER_ID=${container_name}\"
-		--volume \"${distrobox_entrypoint_path}\":/usr/bin/entrypoint:ro
-		--volume ${home_volume}${rslave}"
+		--volume \"${distrobox_entrypoint_path}\":/usr/bin/entrypoint:ro"
+	
+	if [ "${isolated}" -ne 0 ] && [ "${no_bind_home}" -ne 0 ]; then
+		:
+	else
+		result_command="${result_command}
+			--volume ${home_volume}${rslave}"
+	fi
 
 	if [ "${isolated}" -eq 0 ]; then
 		result_command="${result_command}
