@@ -2606,6 +2606,13 @@ fi
 if [ "$(getent passwd "${container_user_name}" | cut -d: -f6)" != "${container_user_home}" ]; then
 	printf "distrobox: Setting up user home...\n"
 
+	if [ ! -d "${container_user_home}" ]; then
+		mkdir -p "${container_user_home}"
+		chown ${container_user_uid}:${container_user_gid} "${container_user_home}"
+		chmod 0700 "${container_user_home}"
+		CREATED_HOME="${container_user_home}"
+	fi
+
 	if ! usermod -d "${container_user_home}" "${container_user_name}"; then
 		sed -i "s|^${container_user_name}.*|${container_user_name}:x:${container_user_uid}:${container_user_gid}::${container_user_home}:${SHELL:-"/bin/bash"}|g" /etc/passwd
 	fi
@@ -2688,7 +2695,7 @@ chmod 0400 /etc/gshadow 2> /dev/null || :
 ###############################################################################
 
 ###############################################################################
-if [ -n "${DISTROBOX_HOST_HOME-}" ] && [ -d "/etc/skel" ]; then
+if [ -n "${DISTROBOX_HOST_HOME:-${CREATED_HOME-}}" ] && [ -d "/etc/skel" ]; then
 	printf "distrobox: Setting up skel...\n"
 
 	# If we do not have profile files in the home, we should copy the
