@@ -86,6 +86,7 @@ non_interactive=0
 nvidia=0
 nopasswd=0
 particular_devices=0
+particular_sockets=0
 unshare_ipc=0
 unshare_groups=0
 unshare_netns=0
@@ -239,6 +240,7 @@ Options:
 	--isolated:		try to create isolated sandbox instead of host integration
 	--pass-some-devices:		pass some devices into container, like Flatpak's --device=all flag. Without --isolated option
 				this option has no effect
+	--pass-sockets:		pass some sockets into container. Currently supported sockets are: wayland, pulse.
 	--help/-h:		show this message
 	--no-entry:		do not generate a container entry in the application list
 	--dry-run/-d:		only print the container manager command generated
@@ -489,6 +491,10 @@ while :; do
 		--pass-some-devices)
 			shift
 			particular_devices=1
+			;;
+		--pass-sockets)
+			shift
+			particular_sockets=1
 			;;
 		--) # End of all options.
 			shift
@@ -794,6 +800,9 @@ generate_create_command()
 		home_volume="\"${container_user_custom_home:-"${container_user_home}"}\":\"${container_home}\""
 	fi
 
+	# pass isolation configuration as bitmask
+	isolated_features=$(( $(( "${particular_devices}" << 1 )) + $(( "${particular_sockets}" << 0 )) ))
+
 	# Mount useful stuff inside the container.
 	# We also mount host's root filesystem to /run/host, to be able to syphon
 	# dynamic configurations from the host.
@@ -808,6 +817,7 @@ generate_create_command()
 		--label \"manager=distrobox\"
 		--label \"distrobox.unshare_groups=${unshare_groups}\"
 		--label \"distrobox.isolated=${isolated}\"
+		--label \"distrobox.isolated_features=${isolated_features}\"
 		--env \"SHELL=$(basename "${SHELL:-"/bin/bash"}")\"
 		--env \"HOME=${container_home}\"
 		--env \"container=${container_manager}\"
@@ -1071,7 +1081,7 @@ generate_create_command()
 				result_command="${result_command}
 					--volume ${xdg_runtime_dir}:/run/user/${container_user_uid}${rslave}"
 			fi
-		else
+		elif [ "${particular_sockets}" -ne 0 ]; then
 			run_prefix=""
 			if [ "${init}" -eq 1 ]; then
 				run_prefix="/run/host"

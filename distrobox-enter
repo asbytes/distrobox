@@ -450,7 +450,7 @@ generate_enter_command()
 			$(printenv | grep '=' | grep -Ev '"|`|\$' |
 			grep -Ev '^(CONTAINER_ID|FPATH|HOST|HOSTNAME|HOME|PATH|PROFILEREAD|PWD|SHELL|XDG_SEAT|XDG_VTNR|XDG_.*_DIRS|^_)' |
 			sed 's/ /\ /g' | sed 's/^\(.*\)$/--env=\1/g')"
-	else
+	elif [ "${pass_sockets}" -ne 0 ]; then
 		if [ -n "${WAYLAND_DISPLAY}" ]; then
 			result_command="${result_command}
 				--env=WAYLAND_DISPLAY=${WAYLAND_DISPLAY}
@@ -619,10 +619,14 @@ container_home="${HOME}"
 container_path="${PATH}"
 unshare_groups=0
 isolated=0
+isolated_features=0
+pass_devices=0
+pass_sockets=0
 
 eval "$(${container_manager} inspect --type container --format \
 	'unshare_groups={{ index .Config.Labels "distrobox.unshare_groups" }};
 	isolated={{ index .Config.Labels "distrobox.isolated" }};
+	isolated_features={{ index .Config.Labels "distrobox.isolated_features" }};
 	{{range .Config.Env}}{{if and (ge (len .) 5) (eq (slice . 0 5) "HOME=")}}container_home={{slice . 5 | printf "%q"}}{{end}}{{end}};
 	{{range .Config.Env}}{{if and (ge (len .) 5) (eq (slice . 0 5) "PATH=")}}container_path={{slice . 5 | printf "%q"}}{{end}}{{end}};
 	container_command_user={{$name_idx:=0}}{{ range $idx, $_value := .Config.Cmd }}{{if (eq . "--name")}}{{$name_idx = $idx }}{{break}}{{end}}{{end}}{{index .Config.Cmd (len (printf "a%*s" $name_idx "")) }}' \
@@ -630,6 +634,10 @@ eval "$(${container_manager} inspect --type container --format \
 
 [ -z "${unshare_groups}" ] && unshare_groups=0
 [ -z "${isolated}" ] && isolated=0
+[ -z "${isolated_features}" ] && isolated_features=0
+
+pass_sockets=$((${isolated_features} & 1))
+pass_devices=$(( $((${isolated_features} >> 1)) & 1))
 
 if [ "${isolated}" -ne 0 ]; then
 	clean_path=1
@@ -743,7 +751,7 @@ fi
 
 # If the container is not already running, we need to start if first
 if [ "${container_status}" != "running" ]; then
-	if [ "${isolated}" -ne 0 ]; then
+	if [ "${isolated}" -ne 0 ] && [ "${pass_sockets}" -ne 0 ]; then
 		create_wayland_socket
 	fi
 
