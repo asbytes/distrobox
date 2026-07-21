@@ -660,12 +660,17 @@ setup_apk()
 			busybox
 			gnutar
 			man-db
-			mesa
 			openssh-client
 			pinentry
 			posix-libc-utils
 			script
 		"
+
+		if [ "${isolated}" -eq 0 ]; then
+			deps="${deps}
+				mesa
+			"
+		fi
 	elif apk add alpine-base; then
 		deps="
 			bash-completion
@@ -679,11 +684,16 @@ setup_apk()
 			openssh-client-default
 			pinentry
 			tar
-			vte3
 			which
-			$(apk search -q mesa-dri)
-			$(apk search -q mesa-vulkan)
 		"
+
+		if [ "${isolated}" -eq 0 ]; then
+			deps="${deps}
+				vte3
+				$(apk search -q mesa-dri)
+				$(apk search -q mesa-vulkan)
+			"
+		fi
 	elif apk add base-bootstrap; then
 		# Prevent "ADB schema error" while installing tzdb in rootful container on currently old image
 		apk upgrade -Ua
@@ -700,14 +710,19 @@ setup_apk()
 			libarchive-progs
 			libcap-progs
 			lsof
-			mesa-dri
 			ncurses-term
 			opendoas
 			openssh
 			util-linux-mount
-			vte
 			wget2
 		"
+
+		if [ "${isolated}" -eq 0 ]; then
+			deps="${deps}
+				mesa-dri
+				vte
+			"
+		fi
 	fi
 	deps="${deps:-}
 		${shell_pkg}
@@ -742,13 +757,19 @@ setup_apk()
 		util-linux
 		util-linux-login
 		util-linux-misc
-		vulkan-loader
 		wget
-		xauth
 		xz
 		zip
 		$(apk search -qe procps)
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			vulkan-loader
+			xauth
+		"
+	fi
+
 	# shellcheck disable=SC2086
 	found_deps="$(apk search -qe ${deps} | tr '\n' ' ')"
 	install_pkg=""
@@ -833,8 +854,6 @@ setup_apt()
 		libkrb5-3
 		libnss-mdns
 		libnss-myhostname
-		libvte-2.9*-common
-		libvte-common
 		locales
 		lsof
 		man-db
@@ -856,18 +875,26 @@ setup_apt()
 		unzip
 		util-linux
 		wget
-		xauth
 		xz-utils
 		zip
-		libgl1
-		libegl-mesa0
-		libegl1-mesa
-		libgl1-mesa-glx
-		libegl1
-		libglx-mesa0
-		libvulkan1
-		mesa-vulkan-drivers
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			libvte-2.9*-common
+			libvte-common
+			xauth
+			libgl1
+			libegl-mesa0
+			libegl1-mesa
+			libgl1-mesa-glx
+			libegl1
+			libglx-mesa0
+			libvulkan1
+			mesa-vulkan-drivers
+		"
+	fi
+
 	# shellcheck disable=SC2086,2046
 	apt-get install -y $(apt-cache show ${deps} 2> /dev/null | grep "Package:" | sort -u | cut -d' ' -f2-)
 
@@ -947,13 +974,9 @@ setup_aptrpm()
 		keyutils
 		less
 		libcap
-		libEGL
-		libGL
 		libkrb5
 		libnss-mdns
 		libnss-myhostname
-		vte3
-		libvulkan1
 		lsof
 		man-db
 		mount
@@ -975,13 +998,22 @@ setup_aptrpm()
 		unzip
 		util-linux
 		wget
-		xauth
-		xorg-dri-intel
-		xorg-dri-radeon
-		xorg-utils
 		xz
 		zip
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			libEGL
+			libGL
+			vte3
+			libvulkan1
+			xauth
+			xorg-dri-intel
+			xorg-dri-radeon
+			xorg-utils
+		"
+	fi
 	# shellcheck disable=SC2086,2046
 	apt-get install -y ${deps}
 
@@ -1110,19 +1142,25 @@ setup_dnf()
 		unzip
 		util-linux
 		util-linux-script
-		vte-profile
 		wget
 		wget2-wget
 		which
 		whois
 		words
-		xorg-x11-xauth
 		xz
 		zip
-		mesa-dri-drivers
-		mesa-vulkan-drivers
-		vulkan
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			vte-profile
+			xorg-x11-xauth
+			mesa-dri-drivers
+			mesa-vulkan-drivers
+			vulkan
+		"
+	fi
+
 	# shellcheck disable=SC2086,2046,2248
 	${manager} install ${flags} -y $(${manager} list -q ${deps} |
 		grep -v "Packages" |
@@ -1294,18 +1332,24 @@ setup_microdnf()
 		tzdata
 		unzip
 		util-linux
-		vte-profile
 		wget
 		which
 		whois
 		words
-		xorg-x11-xauth
 		xz
 		zip
-		mesa-dri-drivers
-		mesa-vulkan-drivers
-		vulkan
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			vte-profile
+			xorg-x11-xauth
+			mesa-dri-drivers
+			mesa-vulkan-drivers
+			vulkan
+		"
+	fi
+
 	install_pkg=""
 	for dep in ${deps}; do
 		if [ "$(microdnf repoquery "${dep}" | wc -l)" -gt 0 ]; then
@@ -1406,15 +1450,21 @@ setup_pacman()
 		unzip
 		util-linux
 		util-linux-libs
-		vte-common
 		wget
 		words
-		xorg-xauth
 		zip
-		mesa
-		vulkan-intel
-		vulkan-radeon
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			mesa
+			vulkan-intel
+			vulkan-radeon
+			xorg-xauth
+			vte-common
+		"
+	fi
+
 	# shellcheck disable=SC2086,2046
 	pacman -S --needed --noconfirm $(pacman -Ssq | grep -E "^($(echo ${deps} | tr ' ' '|'))$")
 
@@ -1475,35 +1525,12 @@ setup_slackpkg()
 		curl
 		diffutils
 		findutils
-		glew
 		glibc
-		glu
 		gnupg2
 		iputils
 		less
-		libX11
-		libXau
-		libXdamage
-		libXdmcp
-		libXext
-		libXfixes
-		libXxf86vm
-		libdrm
-		libvte-2
-		libxcb
-		libxcb-dri2
-		libxcb-dri3
-		libxcb-glx
-		libxcb-present
-		libxcb-randr
-		libxcb-render
-		libxcb-shape
-		libxcb-sync
-		libxcb-xfixes
-		libxshmfence
 		lsof
 		man
-		mesa
 		ncurses
 		openssh
 		pinentry
@@ -1514,8 +1541,37 @@ setup_slackpkg()
 		sudo
 		time
 		wget
-		xauth
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			xauth
+			libX11
+			libXau
+			libXdamage
+			libXdmcp
+			libXext
+			libXfixes
+			libXxf86vm
+			libdrm
+			libvte-2
+			libxcb
+			libxcb-dri2
+			libxcb-dri3
+			libxcb-glx
+			libxcb-present
+			libxcb-randr
+			libxcb-render
+			libxcb-shape
+			libxcb-sync
+			libxcb-xfixes
+			libxshmfence
+			mesa
+			glu
+			glew
+		"
+	fi
+
 	install_pkg=""
 	dep=""
 	for dep in ${deps}; do
@@ -1595,16 +1651,22 @@ setup_xbps()
 		tzdata
 		unzip
 		util-linux
-		xauth
 		xz
 		zip
 		wget
-		vte3
-		mesa-dri
-		vulkan-loader
-		mesa-vulkan-intel
-		mesa-vulkan-radeon
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			xauth
+			vte3
+			mesa-dri
+			vulkan-loader
+			mesa-vulkan-intel
+			mesa-vulkan-radeon
+		"
+	fi
+
 	# shellcheck disable=SC2086,2046
 	xbps-install -Sy $(xbps-query -Rs '*' | awk '{print $2}' | sed 's/-[^-]*$//' | grep -E "^($(echo ${deps} | tr ' ' '|'))$")
 
@@ -1691,7 +1753,6 @@ EOF
 		iputils
 		keyutils
 		less
-		libvte-2*
 		lsof
 		man
 		man-pages
@@ -1717,13 +1778,20 @@ EOF
 		util-linux-systemd
 		wget
 		words
-		xauth
 		zip
-		Mesa-dri
-		libvulkan1
-		libvulkan_intel
-		libvulkan_radeon
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		deps="${deps}
+			Mesa-dri
+			libvulkan1
+			libvulkan_intel
+			libvulkan_radeon
+			xauth
+			libvte-2*
+		"
+	fi
+
 	# Mark gpg errors (exit code 106) as non-fatal, but don't pull anything from unverified repos
 	# shellcheck disable=SC2086,SC2046
 	zypper -n install -y $(zypper -n -q se --match-exact ${deps} | grep -e 'package$' | cut -d'|' -f2) || [ ${?} = 106 ]
@@ -1789,10 +1857,16 @@ check_missing_packages()
 		useradd
 		wc
 		wget
-		xauth
 		zip
 		${shell_pkg}
 	"
+
+	if [ "${isolated}" -eq 0 ]; then
+		dependencies="${dependencies}
+			xauth
+		"
+	fi
+
 	for dep in ${dependencies}; do
 		! command -v "${dep}" && return 1
 	done
