@@ -895,6 +895,13 @@ setup_apt()
 		"
 	fi
 
+	if [ "${init}" -ne 0 ]; then
+		deps="${deps}
+			systemd
+			systemd-sysv
+		"
+	fi
+
 	# shellcheck disable=SC2086,2046
 	apt-get install -y $(apt-cache show ${deps} 2> /dev/null | grep "Package:" | sort -u | cut -d' ' -f2-)
 
@@ -1014,6 +1021,13 @@ setup_aptrpm()
 			mtr
 		"
 	fi
+
+	if [ "${init}" -ne 0 ]; then
+		deps="${deps}
+			systemd
+		"
+	fi
+
 	# shellcheck disable=SC2086,2046
 	apt-get install -y ${deps}
 
@@ -1158,6 +1172,12 @@ setup_dnf()
 			mesa-vulkan-drivers
 			vulkan
 			mtr
+		"
+	fi
+
+	if [ "${init}" -ne 0 ]; then
+		deps="${deps}
+			systemd
 		"
 	fi
 
@@ -1350,6 +1370,12 @@ setup_microdnf()
 		"
 	fi
 
+	if [ "${init}" -ne 0 ]; then
+		deps="${deps}
+			systemd
+		"
+	fi
+
 	install_pkg=""
 	for dep in ${deps}; do
 		if [ "$(microdnf repoquery "${dep}" | wc -l)" -gt 0 ]; then
@@ -1462,6 +1488,13 @@ setup_pacman()
 			xorg-xauth
 			vte-common
 			mtr
+		"
+	fi
+
+	if [ "${init}" -ne 0 ]; then
+		deps="${deps}
+			systemd
+			systemd-sysvcompat
 		"
 	fi
 
