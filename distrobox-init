@@ -858,7 +858,6 @@ setup_apt()
 		lsof
 		man-db
 		manpages
-		mtr
 		ncurses-base
 		openssh-client
 		passwd
@@ -892,6 +891,7 @@ setup_apt()
 			libglx-mesa0
 			libvulkan1
 			mesa-vulkan-drivers
+			mtr
 		"
 	fi
 
@@ -980,7 +980,6 @@ setup_aptrpm()
 		lsof
 		man-db
 		mount
-		mtr
 		ncurses
 		openssh-clients
 		pam
@@ -1012,6 +1011,7 @@ setup_aptrpm()
 			xorg-dri-intel
 			xorg-dri-radeon
 			xorg-utils
+			mtr
 		"
 	fi
 	# shellcheck disable=SC2086,2046
@@ -1122,7 +1122,6 @@ setup_dnf()
 		lsof
 		man-db
 		man-pages
-		mtr
 		ncurses
 		nss-mdns
 		openssh-clients
@@ -1158,6 +1157,7 @@ setup_dnf()
 			mesa-dri-drivers
 			mesa-vulkan-drivers
 			vulkan
+			mtr
 		"
 	fi
 
@@ -1313,7 +1313,6 @@ setup_microdnf()
 		lsof
 		man-db
 		man-pages
-		mtr
 		ncurses
 		nss-mdns
 		openssh-clients
@@ -1347,6 +1346,7 @@ setup_microdnf()
 			mesa-dri-drivers
 			mesa-vulkan-drivers
 			vulkan
+			mtr
 		"
 	fi
 
@@ -1432,7 +1432,6 @@ setup_pacman()
 		man-db
 		man-pages
 		mlocate
-		mtr
 		ncurses
 		nss-mdns
 		openssh
@@ -1462,6 +1461,7 @@ setup_pacman()
 			vulkan-radeon
 			xorg-xauth
 			vte-common
+			mtr
 		"
 	fi
 
@@ -1635,7 +1635,6 @@ setup_xbps()
 		man-db
 		mit-krb5-client
 		mit-krb5-libs
-		mtr
 		ncurses-base
 		nss
 		openssh
@@ -1664,6 +1663,7 @@ setup_xbps()
 			vulkan-loader
 			mesa-vulkan-intel
 			mesa-vulkan-radeon
+			mtr
 		"
 	fi
 
@@ -1756,7 +1756,6 @@ EOF
 		lsof
 		man
 		man-pages
-		mtr
 		ncurses
 		nss-mdns
 		openssh-clients
@@ -1789,6 +1788,7 @@ EOF
 			libvulkan_radeon
 			xauth
 			libvte-2*
+			mtr
 		"
 	fi
 
